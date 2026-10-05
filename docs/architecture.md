@@ -330,34 +330,7 @@ sequenceDiagram
     ReactUI-->>Organizer: 21. Muestra en pantalla el nuevo saldo y semáforo amarillo
 ```
 
-## 5. Homologación y Mapeo Conceptual para Diagramación (AWS & Azure Icons)
-
-Para la entrega académica y la presentación final del proyecto, se homologa la arquitectura nativa de Cloudflare con las dos bibliotecas estándar de la industria indicadas por la cátedra universitaria:
-- [Página de íconos de arquitectura de AWS (amazon.com)](https://aws.amazon.com/es/architecture/icons/)
-- [Iconos de Azure - Azure Architecture Center | Microsoft Learn](https://learn.microsoft.com/es-es/azure/architecture/icons/)
-
-### 5.1 Matriz de Homologación Tecnológica y Visual
-
-Esta tabla permite al estudiante diagramar la solución en **Draw.io**, **Lucidchart**, **PowerPoint** o **Visio** utilizando tanto los íconos oficiales de AWS como los de Azure:
-
-| Componente Lógico (Planora) | Recurso Real de Ejecución (Cloudflare) | Equivalente / Ícono Oficial AWS (AWS Architecture Icons) | Equivalente / Ícono Oficial Azure (Azure Architecture Icons) | Función Arquitectónica |
-|---|---|---|---|---|
-| **Capa de Usuarios / Actores** | Navegadores Web y Dispositivos Móviles | `General / Users` o `Client` | `General / Users` | Representa a organizadores, clientes y administradores interactuando con la interfaz. |
-| **Alojamiento Frontend (SPA)** | **Cloudflare Pages** | `AWS Amplify` o `Amazon S3 (Static Web)` | `Azure Static Web Apps` | Aloja y distribuye globalmente los bundles compilados de React 18 + Vite. |
-| **Sistema DNS y Enrutamiento Global** | **Cloudflare Anycast DNS** | `Amazon Route 53` | `Azure DNS` | Resolución de nombres con latencia mínima hacia el nodo de borde más cercano. |
-| **Seguridad de Borde (WAF & DDoS)** | **Cloudflare WAF & DDoS Shield** | `AWS WAF` & `AWS Shield` | `Azure Web Application Firewall (WAF)` | Filtrado perimetral contra ataques web, mitigación DDoS y terminación TLS 1.3. |
-| **API Gateway & Enrutador REST** | **Hono Router (en Workers)** | `Amazon API Gateway` | `Azure API Management` | Despacho de rutas `/api/v1/*`, CORS, rate limiting y validación de esquemas Zod. |
-| **Cómputo Serverless Backend** | **Cloudflare Workers (V8 Isolates)** | `AWS Lambda` | `Azure Functions` | Cómputo serverless de 0 ms cold start donde corren los controladores y servicios de dominio. |
-| **Base de Datos Transaccional** | **Cloudflare D1 (SQLite Edge)** | `Amazon Aurora Serverless` / `Amazon RDS` | `Azure SQL Database Serverless` | Motor relacional SQL con transacciones ACID para usuarios, eventos, tareas y gastos. |
-| **Almacenamiento de Archivos (Objetos)** | **Cloudflare R2 (S3-compatible)** | `Amazon Simple Storage Service (Amazon S3)` | `Azure Blob Storage` | Repositorio de objetos para comprobantes de pago y contratos PDF sin costos de egress. |
-| **Caché y Almacén Clave-Valor** | **Cloudflare KV** | `Amazon ElastiCache` o `Amazon DynamoDB (KV)` | `Azure Cache for Redis` o `Azure Table Storage` | Almacenamiento en memoria ultra rápido para revocación de JWT y control de cuotas. |
-
----
-
-## 6. Diagramas de Arquitectura con Taxonomía de Íconos Universitaria
-
-### 6.1 Diagrama de Arquitectura con Homologación AWS Icons (Mermaid)
-
+## 5. Diagramas de Arquitectura
 ```mermaid
 flowchart TD
     subgraph UsersTier["Capa de Clientes (AWS General / Users)"]
@@ -397,83 +370,7 @@ flowchart TD
     DomainLogic -->|"Subir / Descargar PDFs"| S3Storage
     DomainLogic -->|"Validar Tokens Revocados"| ElastiCacheKV
 ```
-
----
-
-### 6.2 Diagrama de Arquitectura con Homologación Azure Icons (Mermaid)
-
-```mermaid
-flowchart TD
-    subgraph AzureUsersTier["Capa de Usuarios (Azure General / Users)"]
-        AzureUser["👤 Azure Users\n(Organizador / Cliente)"]
-    end
-
-    subgraph AzurePerimeter["Capa Perimetral (Azure Networking & Security)"]
-        AzureDNS["🌐 Azure DNS\n[Equiv: Cloudflare DNS]"]
-        AzureWAF["🛡️ Azure Web Application Firewall (WAF)\n[Equiv: Cloudflare WAF]"]
-        AzureStaticApps["💻 Azure Static Web Apps\n[Equiv: Cloudflare Pages (React SPA)]"]
-    end
-
-    subgraph AzureCompute["Capa de Cómputo e Integración (Azure Compute)"]
-        AzureAPIM["🚪 Azure API Management\n[Equiv: Hono Framework Router]"]
-        AzureFunc["⚡ Azure Functions (Serverless)\n[Equiv: Cloudflare Workers Runtime]"]
-        
-        subgraph AzureCleanArch["Clean Architecture / Dominio"]
-            AzureDomain["Servicios de Dominio:\nPresupuestos, Aforos, Tareas, Agenda"]
-        end
-    end
-
-    subgraph AzureData["Capa de Datos y Almacenamiento (Azure Databases & Storage)"]
-        AzureSQL[("🗄️ Azure SQL Database Serverless\n[Equiv: Cloudflare D1 (SQLite)]")]
-        AzureBlob[("🪣 Azure Blob Storage\n[Equiv: Cloudflare R2 (Contratos PDF)]")]
-        AzureRedis[("⚡ Azure Cache for Redis\n[Equiv: Cloudflare KV (Blacklist JWT)]")]
-    end
-
-    %% Conexiones
-    AzureUser -->|"1. HTTPS Request"| AzureDNS
-    AzureDNS --> AzureWAF
-    AzureWAF -->|"Carga de Assets"| AzureStaticApps
-    AzureUser -->|"2. Peticiones REST"| AzureAPIM
-    AzureAPIM --> AzureFunc
-    AzureFunc --> AzureDomain
-
-    AzureDomain -->|"Transacciones SQL"| AzureSQL
-    AzureDomain -->|"Documentos Binarios"| AzureBlob
-    AzureDomain -->|"Caché y Control de Sesión"| AzureRedis
-```
-
----
-
-## 7. Guía Paso a Paso para Diagramar en Draw.io o Lucidchart
-
-Para los entregables gráficos solicitados por el profesor en la universidad:
-
-### Paso 1: Configurar la Biblioteca de Íconos en Draw.io / Lucidchart
-- **En Draw.io:** Clic en `Más formas` (abajo a la izquierda) $\rightarrow$ Activar la casilla `AWS 2024` o `Azure`.
-- **En Lucidchart:** Clic en `+ Figuras` $\rightarrow$ Buscar e importar `AWS Architecture` o `Azure Cloud Architecture`.
-
-### Paso 2: Dibujar los Cuadros Delimitadores (*Bounding Boxes*)
-1. **Lado Izquierdo:** Caja agrupada llamada `Client Tier` con el ícono `Users`.
-2. **Centro Superior:** Caja agrupada llamada `Edge Perimeter Tier` con los íconos de DNS, WAF y Static Web Hosting (`Amplify` / `Static Web Apps`).
-3. **Centro:** Caja agrupada llamada `Serverless Compute Tier` con el ícono de API Gateway (`Amazon API Gateway` / `Azure API Management`) conectado al ícono de Serverless Compute (`AWS Lambda` / `Azure Functions`).
-4. **Lado Derecho:** Caja agrupada llamada `Data & Storage Tier` conteniendo los 3 íconos de persistencia:
-   - Base de Datos Relacional (`Aurora Serverless` / `Azure SQL`).
-   - Almacén de Objetos (`Amazon S3` / `Azure Blob Storage`).
-   - Caché en Memoria (`ElastiCache` / `Azure Cache for Redis`).
-
-### Paso 3: Rotulación y Claridad Técnica para Evaluación Docente
-En cada figura, colocar una etiqueta doble que demuestre la relación de homologación técnica:
-> *Ejemplo de etiqueta en el ícono de Lambda:*  
-> **AWS Lambda**  
-> *(Ejecutado en Cloudflare Workers / Hono API)*  
->  
-> *Ejemplo de etiqueta en el ícono de S3:*  
-> **Amazon S3**  
-> *(Ejecutado en Cloudflare R2 Object Storage)*
-
----
-
-## 8. Justificación de Decisiones de Arquitectura Lógica
+## 6. Justificación de Decisiones de Arquitectura Lógica
 
 1. **¿Por qué Puertos y Adaptadores (Clean Architecture) en un Edge Monolith?**  
    Permite que la lógica de negocio (fórmulas de presupuesto, cálculos de aforo, transiciones de eventos) sea **100% testeable de forma aislada con Vitest**, sin necesidad de conectarse a bases de datos en la nube ni simular la red.
