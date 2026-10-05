@@ -427,6 +427,11 @@ El stack tecnológico ha sido cuidadosamente seleccionado bajo la premisa de **e
 
 El siguiente diagrama representa de forma limpia, simétrica y vertical la arquitectura física y de red en el entorno de producción de **Cloudflare**, mostrando el flujo ordenado de solicitudes desde el usuario hasta la capa de persistencia en el Edge:
 
+![Diagrama de Infraestructura Cloud en Producción](./images/diagrama-infraestructura.png)
+
+<details>
+<summary><b>Ver código fuente Mermaid del Diagrama de Infraestructura</b></summary>
+
 ```mermaid
 %%{init: {
   'theme': 'base',
@@ -497,12 +502,18 @@ flowchart TD
     style Tier3 fill:#ffffff,stroke:#64748b,stroke-width:1.5px,color:#0f172a
     style Tier4 fill:#ffffff,stroke:#64748b,stroke-width:1.5px,color:#0f172a
 ```
+</details>
 
 ---
 
 ### 7.2 Diagrama del Ciclo de Vida DevOps y Despliegue Continuo (CI/CD)
 
-Para evitar cruces de líneas y mantener una representación simétrica e intuitiva, el flujo de desarrollo, pruebas, publicación en **Docker Hub** y despliegue a **Cloudflare** se estructura en un pipeline horizontal lineal:
+Para evitar cruces de líneas y mantener una representación simétrica e intuitiva, el flujo de desarrollo, pruebas, publicación en **Docker Hub** y despliegue a **Cloudflare** se estructura en un pipeline continuo:
+
+![Diagrama de Deployment y Pipeline CI/CD](./images/diagrama-deployment.png)
+
+<details>
+<summary><b>Ver código fuente Mermaid del Diagrama de Deployment</b></summary>
 
 ```mermaid
 %%{init: {
@@ -568,6 +579,9 @@ flowchart LR
     style REGISTRY fill:#ffffff,stroke:#64748b,stroke-width:1.5px,color:#0f172a
     style DEPLOY fill:#ffffff,stroke:#64748b,stroke-width:1.5px,color:#0f172a
 ```
+</details>
+
+---
 
 ### 7.3 Diagrama de Infraestructura con Servicios e Íconos de Azure (Cumplimiento de Rúbrica)
 
@@ -682,6 +696,11 @@ Se implementa un modelo de **Git Flow Adaptado y Pragmático**, balanceando el m
 
 El desarrollo del proyecto se organiza en **8 Fases de Ingeniería** secuenciales y lógicas:
 
+![Plan de Trabajo Gantt](./images/plan-de-trabajo-gantt.png)
+
+<details>
+<summary><b>Ver código fuente Mermaid del Diagrama de Gantt</b></summary>
+
 ```mermaid
 %%{init: {
   'theme': 'base',
@@ -732,6 +751,7 @@ gantt
     section F8: Documentación
     Entrega Word y Presentación       :2026-11-21, 2026-11-24
 ```
+</details>
 
 ### Detalle de Fases (Calendario Oficial: 04/10/2026 al 24/11/2026):
 - **Fase 1 — Análisis y Diseño (04/10/2026 – 10/10/2026):**  
@@ -891,6 +911,11 @@ La estrategia prioriza la verificación de la **capa de dominio y lógica de neg
 
 ### 10.1 Estructura del Tablero Kanban (6 Columnas)
 
+![Estructura del Tablero Kanban](./images/tablero-kanban.png)
+
+<details>
+<summary><b>Ver código fuente Mermaid del flujo Kanban</b></summary>
+
 ```mermaid
 %%{init: {
   'theme': 'base',
@@ -911,6 +936,7 @@ flowchart LR
     classDef whiteNode fill:#ffffff,stroke:#1e293b,stroke-width:1.5px,color:#0f172a;
     class C1,C2,C3,C4,C5,C6 whiteNode;
 ```
+</details>
 
 Flujo textual lineal:
 ```text
