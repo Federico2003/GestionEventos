@@ -7,9 +7,8 @@
 [![Testing](https://img.shields.io/badge/Testing-Vitest%20(%E2%89%A585%25%20Domain)-green?logo=vitest)](https://vitest.dev)
 [![TypeScript](https://img.shields.io/badge/Language-TypeScript%205.x-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 
-> **Proyecto Final de Grado**  
-> **Asignatura:** Infraestructura para el Desarrollo Continuo (9º Semestre)  
-> **Enfoque:** Arquitectura Serverless Edge, Integración Continua, Containerización Docker y Despliegue Automatizado en la Nube de Cloudflare.
+> **Plataforma SaaS B2B para Gestión de Eventos Profesionales**  
+> **Arquitectura:** Serverless Edge Computing, Clean Architecture, CI/CD Automatizado y Containerización Docker OCI.
 
 ---
 
@@ -54,7 +53,7 @@ Toda la especificación técnica, modelos y diseño se encuentra detallada en la
 
 | Documento | Descripción |
 |-----------|-------------|
-| 📘 [`docs/documento-final-word.md`](docs/documento-final-word.md) | **Documento Maestro Completo (Entregable Final Word):** Acomodo oficial en 11 secciones listo para entrega académica. |
+| 📘 [`docs/documento-final-word.md`](docs/documento-final-word.md) | **Documento Maestro Completo (Especificación del Sistema):** Especificación técnica oficial en 11 secciones detalladas. |
 | 📄 [`docs/project-proposal.md`](docs/project-proposal.md) | Propuesta general, nombres evaluados, problemática, objetivos, alcance y especificación de los 10 componentes del MVP. |
 | 🗄️ [`docs/database-model.md`](docs/database-model.md) | Diagrama Entidad-Relación (Mermaid), cardinalidades (1:1, 1:N, N:M), normalización y DDL SQL completo para Cloudflare D1. |
 | 🧩 [`docs/class-diagram.md`](docs/class-diagram.md) | Diagrama de clases UML completo en Mermaid, incluyendo atributos, métodos CRUD y lógica de negocio avanzada. |
@@ -66,7 +65,7 @@ Toda la especificación técnica, modelos y diseño se encuentra detallada en la
 | 🌿 [`docs/branching-strategy.md`](docs/branching-strategy.md) | Modelo de ramas Git Flow adaptado, flujo de Pull Requests y convención de Conventional Commits. |
 | 📅 [`docs/project-plan.md`](docs/project-plan.md) | Plan de trabajo en 9 fases de ingeniería, 10 milestones y estructura de 6 columnas del GitHub Project Board. |
 | 📋 [`docs/issues-backlog.md`](docs/issues-backlog.md) | Backlog de 23 GitHub Issues accionables con prioridades, dependencias y criterios de aceptación verificables. |
-| 🎓 [`docs/presentation-structure.md`](docs/presentation-structure.md) | Estructura detallada de las 18 diapositivas con puntos clave y guion de exposición para la defensa universitaria. |
+| 📊 [`docs/presentation-structure.md`](docs/presentation-structure.md) | Estructura detallada de las 18 diapositivas con puntos clave y guion ejecutivo de presentación de producto. |
 
 ---
 

@@ -1,8 +1,9 @@
 # PLANORA: Plataforma Integral de Gestión Operativa, Gastronómica y Financiera para Organizadores de Eventos
 
-**Asignatura:** Infraestructura para el Desarrollo Continuo (9º Semestre)  
-**Tipo de Documento:** Propuesta y Especificación Técnica de Proyecto de Grado / Proyecto Final  
-**Nombre del Sistema:** **PLANORA**  
+**Documento:** Propuesta de Arquitectura y Especificación Técnica del Sistema (RFC & Design Spec)  
+**Versión:** 1.0.0  
+**Estado:** Aprobado para Implementación  
+**Sistema:** **PLANORA — Event Management & Financial Control Platform**  
 
 ---
 
@@ -61,10 +62,10 @@ La concurrencia de estas problemáticas demuestra que los aspectos logísticos m
 Desplegar esta solución sobre la infraestructura Serverless de **Cloudflare** (Pages, Workers, D1, R2 y KV) proporciona ventajas estratégicas:
 - **Latencia mínima (<50 ms):** El organizador y sus coordinadores en campo consultan datos en tiempo real desde sus teléfonos móviles sin demoras de red.
 - **Cero mantenimiento de servidores:** Se elimina la carga de aprovisionar y parchar máquinas virtuales o contenedores permanentes en la nube.
-- **Costos operativos prácticamente nulos:** Ideal para un modelo SaaS emergente y perfectamente sustentable como proyecto universitario individual.
+- **Costos operativos altamente eficientes:** Modelo de costos por demanda óptimo para un SaaS B2B moderno con alta rentabilidad operativa.
 
-### 3.3 Delimitación de Alcance: MVP vs. Funcionalidades Futuras
-Para garantizar la viabilidad y excelencia técnica de un desarrollo individual de 9º semestre, se define una frontera estricta entre el MVP y versiones posteriores:
+### 3.3 Delimitación de Alcance: MVP vs. Roadmap Futuro
+Para garantizar una ejecución técnica rigurosa, un time-to-market acelerado y el cumplimiento de los más altos estándares de calidad de software, se define una frontera estricta entre el MVP y las fases subsecuentes:
 
 - **En el Alcance del MVP:**
   - Núcleo de invitados (RSVP, acompañantes, aforo y asignación de mesas).
@@ -413,15 +414,15 @@ El stack tecnológico ha sido cuidadosamente seleccionado bajo la premisa de **e
 | **Vitest** | Framework de Testing | Compatible de forma nativa con ESM y TypeScript; rápida ejecución paralela. | Pruebas unitarias de la lógica matemática de presupuestos y aforo de mesas. |
 | **Git & GitHub** | Control de Versiones | Estándar global de gestión de código fuente colaborativo. | Trazabilidad del desarrollo, revisión de Pull Requests y ramas de trabajo. |
 | **GitHub Actions** | Automatización CI/CD | Orquestador de integración continua integrado nativamente en GitHub. | Ejecución automatizada de pruebas, linter, builds y despliegues sin intervención manual. |
-| **Docker & Docker Hub** | Contenedores y Registro OCI | Construcción multi-stage de imágenes y registro público de artefactos. | Entorno de build y pruebas 100% reproducible y cumplimiento con la rúbrica académica. |
+| **Docker & Docker Hub** | Contenedores y Registro OCI | Construcción multi-stage de imágenes y registro estandarizado de artefactos. | Entorno de compilación y pruebas hermético, portable y reproducible entre entornos. |
 
 ---
 
-# 7. Diagrama de Infraestructura
+# 7. Recursos de Infraestructura y Despliegue
 
 > [!NOTE]
-> **Aclaración de Arquitectura:**  
-> Cloudflare Workers **NO ejecuta contenedores Docker en tiempo de ejecución**; se ejecuta sobre **V8 Isolates** nativos. Docker se utiliza en el pipeline de desarrollo y CI/CD para compilar y probar la aplicación en un entorno idéntico y publicar las imágenes en Docker Hub para cumplir los requerimientos de la materia.
+> **Aclaración de Arquitectura y Runtime:**  
+> Cloudflare Workers opera en producción sobre **V8 Isolates** nativos (arranque en frío de 0 ms). Los contenedores **Docker** se emplean de forma estratégica en el pipeline de CI/CD y entornos locales para garantizar compilaciones herméticas, ejecución aislada de suites de prueba y publicación de imágenes OCI portables en **Docker Hub**.
 
 ### 7.1 Diagrama de Infraestructura Cloud en Producción (Cloudflare Native)
 
@@ -583,9 +584,9 @@ flowchart LR
 
 ---
 
-### 7.3 Diagrama de Infraestructura con Servicios e Íconos de Azure (Cumplimiento de Rúbrica)
+### 7.3 Arquitectura Homologada de Referencia en Microsoft Azure (Enterprise Cloud Mapping)
 
-Para cumplir con el criterio de evaluación docente (*"Recursos: Diagrama de infraestructura, usando los iconos de Azure"*), a continuación se presenta la homologación exacta de la arquitectura de **PLANORA** mapeada a los servicios equivalentes del catálogo de **Microsoft Azure Architecture Icons**:
+Para organizaciones que adoptan estándares multicloud o arquitecturas basadas en el ecosistema de Microsoft Azure, a continuación se presenta la homologación de la topología de **PLANORA** mapeada a los servicios equivalentes del catálogo oficial de **Microsoft Azure Architecture Icons**:
 
 ```mermaid
 %%{init: {
@@ -664,7 +665,7 @@ Para cumplir con el estándar de infraestructura y reproducibilidad hermética, 
   - `docker.io/<usuario>/planora-frontend`: Imagen basada en `nginx:alpine` conteniendo los assets estáticos de React 18 precompilados por Vite.
 - **Estrategia de Etiquetado (*Tagging*):**
   - `latest`: Representa la versión estable más reciente integrada en la rama `main`.
-  - `<commit-sha>` (ej. `sha-7a8b9c0`): Garantiza inmutabilidad y trazabilidad para auditorías docentes y despliegues reproducibles.
+  - `<commit-sha>` (ej. `sha-7a8b9c0`): Garantiza inmutabilidad y trazabilidad para auditorías operativas, rollbacks seguros y despliegues reproducibles.
   - `v1.0.0`: Versiones semánticas (*Semantic Versioning*) asociadas a cada Release oficial.
 - **Automatización CI/CD:**  
   El workflow de GitHub Actions se autentica contra Docker Hub mediante secretos cifrados (`DOCKER_USERNAME` y `DOCKER_TOKEN`), compila las imágenes en paralelo y ejecuta el push únicamente tras la aprobación de todas las pruebas unitarias.
@@ -673,7 +674,7 @@ Para cumplir con el estándar de infraestructura y reproducibilidad hermética, 
 
 ### 7.5 Estrategia de Ramas Git y Flujo de Trabajo
 
-Se implementa un modelo de **Git Flow Adaptado y Pragmático**, balanceando el máximo rigor de control de versiones con la agilidad requerida para un desarrollo individual:
+Se implementa un modelo de **Git Flow Adaptado y Pragmático**, balanceando el máximo rigor de control de versiones con la agilidad requerida en un pipeline de integración y despliegue continuo:
 
 - **Ramas Troncales Protegidas:**
   - `main`: Código productivo 100% probado. Protegida contra *direct pushes*; únicamente recibe cambios mediante *Pull Requests* aprobados desde `develop` o ramas `hotfix/*`.
@@ -782,9 +783,9 @@ gantt
   *Objetivo:* Automatizar construcción multi-stage de imágenes Docker, publicación en Docker Hub y despliegue a Cloudflare.  
   *Entregables:* Imágenes públicas en Docker Hub y pipeline de GitHub Actions en verde.  
   *Dependencias:* Fase 6.
-- **Fase 8 — Documentación Final y Cierre (21/11/2026 – 24/11/2026):**  
-  *Objetivo:* Consolidar el documento final para Word, preparar diapositivas ejecutivas y guion de defensa.  
-  *Entregables:* Documento final, diapositivas y repositorio listo para entrega.  
+- **Fase 8 — Documentación Final y Release (21/11/2026 – 24/11/2026):**  
+  *Objetivo:* Consolidar la especificación técnica completa en Wiki/Word, generar el paquete de release v1.0.0 y preparar la presentación ejecutiva.  
+  *Entregables:* Documentación técnica oficial, presentación ejecutiva del sistema y versión v1.0.0 desplegada.  
   *Dependencias:* Fase 7.
 
 ---
@@ -953,7 +954,7 @@ Flujo textual lineal:
 - **M7:** Containerización con Docker Multi-stage.
 - **M8:** Pipeline CI/CD en GitHub Actions y Docker Hub.
 - **M9:** Despliegue en Producción a Cloudflare Workers y Pages.
-- **M10:** Documentación Final y Preparación de la Defensa.
+- **M10:** Documentación Técnica Integral, Release v1.0.0 y Presentación Ejecutiva.
 
 ### 10.3 Backlog de 23 Issues Accionables
 
@@ -981,13 +982,13 @@ Flujo textual lineal:
 | **#20** | Automatización de Construcción y Push a Docker Hub | M8 | Crítica | #17, #18, #19 |
 | **#21** | Automatización de Despliegue a Cloudflare Workers y Pages con Wrangler | M9 | Crítica | #20 |
 | **#22** | Documentación Técnica de Arquitectura y Especificación en Wiki | M10 | Alta | Todas |
-| **#23** | Elaboración de Guion y Estructura de Diapositivas de Presentación | M10 | Alta | #22 |
+| **#23** | Elaboración de Presentación Ejecutiva de Arquitectura y Demo del Sistema | M10 | Alta | #22 |
 
 ---
 
 # 11. Conclusión
 
-El proyecto **PLANORA** representa una propuesta de ingeniería de software sólida, rigurosa y realizable individualmente por un estudiante de 9º semestre. 
+El proyecto **PLANORA** representa una propuesta de ingeniería de software sólida, rigurosa y orientada a producción para el sector de gestión de eventos. 
 
 A diferencia de proyectos teóricos desconectados de la realidad, **PLANORA** se sustenta en una problemática empírica validada mediante exploración inicial con una persona dedicada a la organización de eventos, resolviendo con precisión matemática y operativa los mayores dolores de cabeza de la profesión: el conteo de invitados, la asignación de mesas, la prevención de riesgos por alergias alimentarias y el control contra sobrecostos financieros.
 
