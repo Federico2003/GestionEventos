@@ -50,23 +50,23 @@ Usuario → Frontend (React SPA) → Cloudflare Edge (WAF/DNS) → API Gateway (
 
 ## 📚 Índice de Documentación Técnica
 
-Toda la especificación técnica, modelos y diseño se encuentra detallada en la carpeta [`/docs`](file:///docs):
+Toda la especificación técnica, modelos y diseño se encuentra detallada en la carpeta [`/docs`](docs/):
 
 | Documento | Descripción |
 |-----------|-------------|
-| 📘 [`docs/documento-final-word.md`](file:///docs/documento-final-word.md) | **Documento Maestro Completo (Entregable Final Word):** Acomodo oficial en 11 secciones listo para entrega académica. |
-| 📄 [`docs/project-proposal.md`](file:///docs/project-proposal.md) | Propuesta general, nombres evaluados, problemática, objetivos, alcance y especificación de los 10 componentes del MVP. |
-| 🗄️ [`docs/database-model.md`](file:///docs/database-model.md) | Diagrama Entidad-Relación (Mermaid), cardinalidades (1:1, 1:N, N:M), normalización y DDL SQL completo para Cloudflare D1. |
-| 🧩 [`docs/class-diagram.md`](file:///docs/class-diagram.md) | Diagrama de clases UML completo en Mermaid, incluyendo atributos, métodos CRUD y lógica de negocio avanzada. |
-| 🏛️ [`docs/architecture.md`](file:///docs/architecture.md) | Arquitectura lógica del software (Clean Architecture en 6 capas), homologación con íconos oficiales de AWS y Azure, y comparativa del stack. |
-| ☁️ [`docs/infrastructure.md`](file:///docs/infrastructure.md) | Diagrama de infraestructura Cloudflare, inventario de recursos y archivo declarativo `wrangler.toml`. |
-| 🚀 [`docs/deployment.md`](file:///docs/deployment.md) | Flujo completo de CI/CD en GitHub Actions, publicación en Docker Hub y despliegue continuo con Wrangler. |
-| 🐳 [`docs/docker-strategy.md`](file:///docs/docker-strategy.md) | Dockerfiles multi-stage para backend y frontend, configuración de `docker-compose.yml` y comandos de Docker Hub. |
-| 🧪 [`docs/testing-strategy.md`](file:///docs/testing-strategy.md) | Estrategia de pruebas unitarias con Vitest, ejemplos ejecutables para presupuestos, eventos, RSVP y detección de conflictos. |
-| 🌿 [`docs/branching-strategy.md`](file:///docs/branching-strategy.md) | Modelo de ramas Git Flow adaptado, flujo de Pull Requests y convención de Conventional Commits. |
-| 📅 [`docs/project-plan.md`](file:///docs/project-plan.md) | Plan de trabajo en 9 fases de ingeniería, 10 milestones y estructura de 6 columnas del GitHub Project Board. |
-| 📋 [`docs/issues-backlog.md`](file:///docs/issues-backlog.md) | Backlog de 23 GitHub Issues accionables con prioridades, dependencias y criterios de aceptación verificables. |
-| 🎓 [`docs/presentation-structure.md`](file:///docs/presentation-structure.md) | Estructura detallada de las 18 diapositivas con puntos clave y guion de exposición para la defensa universitaria. |
+| 📘 [`docs/documento-final-word.md`](docs/documento-final-word.md) | **Documento Maestro Completo (Entregable Final Word):** Acomodo oficial en 11 secciones listo para entrega académica. |
+| 📄 [`docs/project-proposal.md`](docs/project-proposal.md) | Propuesta general, nombres evaluados, problemática, objetivos, alcance y especificación de los 10 componentes del MVP. |
+| 🗄️ [`docs/database-model.md`](docs/database-model.md) | Diagrama Entidad-Relación (Mermaid), cardinalidades (1:1, 1:N, N:M), normalización y DDL SQL completo para Cloudflare D1. |
+| 🧩 [`docs/class-diagram.md`](docs/class-diagram.md) | Diagrama de clases UML completo en Mermaid, incluyendo atributos, métodos CRUD y lógica de negocio avanzada. |
+| 🏛️ [`docs/architecture.md`](docs/architecture.md) | Arquitectura lógica del software (Clean Architecture en 6 capas), homologación con íconos oficiales de AWS y Azure, y comparativa del stack. |
+| ☁️ [`docs/infrastructure.md`](docs/infrastructure.md) | Diagrama de infraestructura Cloudflare, inventario de recursos y archivo declarativo `wrangler.toml`. |
+| 🚀 [`docs/deployment.md`](docs/deployment.md) | Flujo completo de CI/CD en GitHub Actions, publicación en Docker Hub y despliegue continuo con Wrangler. |
+| 🐳 [`docs/docker-strategy.md`](docs/docker-strategy.md) | Dockerfiles multi-stage para backend y frontend, configuración de `docker-compose.yml` y comandos de Docker Hub. |
+| 🧪 [`docs/testing-strategy.md`](docs/testing-strategy.md) | Estrategia de pruebas unitarias con Vitest, ejemplos ejecutables para presupuestos, eventos, RSVP y detección de conflictos. |
+| 🌿 [`docs/branching-strategy.md`](docs/branching-strategy.md) | Modelo de ramas Git Flow adaptado, flujo de Pull Requests y convención de Conventional Commits. |
+| 📅 [`docs/project-plan.md`](docs/project-plan.md) | Plan de trabajo en 9 fases de ingeniería, 10 milestones y estructura de 6 columnas del GitHub Project Board. |
+| 📋 [`docs/issues-backlog.md`](docs/issues-backlog.md) | Backlog de 23 GitHub Issues accionables con prioridades, dependencias y criterios de aceptación verificables. |
+| 🎓 [`docs/presentation-structure.md`](docs/presentation-structure.md) | Estructura detallada de las 18 diapositivas con puntos clave y guion de exposición para la defensa universitaria. |
 
 ---
 
