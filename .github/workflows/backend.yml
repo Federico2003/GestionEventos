@@ -57,3 +57,83 @@ jobs:
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/planora-api:${{ github.ref_name == 'main' && 'latest' || 'dev' }}
             ${{ secrets.DOCKER_USERNAME }}/planora-api:sha-${{ github.sha }}
+
+  deploy-dev:
+    name: BackEnd - Ambiente Dev
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: ID de la base D1 (variable D1_DATABASE_ID)
+        run: sed -i "s/__D1_DATABASE_ID__/${{ vars.D1_DATABASE_ID }}/" packages/api/wrangler.toml
+      - name: Migraciones D1
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
+          workingDirectory: packages/api
+          command: d1 migrations apply DB --remote --env dev
+      - name: Deploy del Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
+          workingDirectory: packages/api
+          environment: dev
+          secrets: |
+            JWT_SECRET
+            SENTRY_DSN
+            ALLOWED_ORIGINS
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          ALLOWED_ORIGINS: ${{ vars.FRONTEND_URL }}
+
+  deploy-prod:
+    name: BackEnd - Ambiente Prod
+    needs: [deploy-dev, docker-hub]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production   # Required reviewers: espera aprobación manual
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: ID de la base D1 (variable D1_DATABASE_ID)
+        run: sed -i "s/__D1_DATABASE_ID__/${{ vars.D1_DATABASE_ID }}/" packages/api/wrangler.toml
+      - name: Migraciones D1
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
+          workingDirectory: packages/api
+          command: d1 migrations apply DB --remote --env production
+      - name: Deploy del Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
+          workingDirectory: packages/api
+          environment: production
+          secrets: |
+            JWT_SECRET
+            SENTRY_DSN
+            ALLOWED_ORIGINS
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          ALLOWED_ORIGINS: ${{ vars.FRONTEND_URL }}

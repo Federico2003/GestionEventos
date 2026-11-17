@@ -54,3 +54,53 @@ jobs:
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/planora-web:${{ github.ref_name == 'main' && 'latest' || 'dev' }}
             ${{ secrets.DOCKER_USERNAME }}/planora-web:sha-${{ github.sha }}
+
+  deploy-dev:
+    name: Frontend - Ambiente Dev
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace=packages/frontend
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_APP_ENV: development
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
+          command: pages deploy packages/frontend/dist --project-name=${{ vars.CF_PAGES_PROJECT }} --branch=main
+
+  deploy-prod:
+    name: Frontend - Ambiente Prod
+    needs: [deploy-dev, docker-hub]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production   # Required reviewers: espera aprobación manual
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace=packages/frontend
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_APP_ENV: production
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
+          command: pages deploy packages/frontend/dist --project-name=${{ vars.CF_PAGES_PROJECT }} --branch=main
