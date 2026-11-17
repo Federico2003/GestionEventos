@@ -1044,5 +1044,29 @@ export function createApp(deps: AppDependencies = {}): Hono<{ Variables: AppVari
     return c.json({ report });
   });
 
+  // Proveedores y Contratos en Cloudflare R2
+  app.get('/api/v1/vendors', (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const list = Array.from(store.vendors.values()).filter((v) =>
+      user.role === 'admin' ? true : v.organizerId === user.userId
+    );
+    return c.json({ vendors: list });
+  });
+
+  app.post('/api/v1/vendors', async (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const data = createVendorSchema.parse(await c.req.json());
+
+    const vendor = new VendorEntity({
+      id: `vnd-${crypto.randomUUID().slice(0, 8)}`,
+      organizerId: user.role === 'organizer' ? user.userId : 'u-org',
+      ...data
+    });
+    store.vendors.set(vendor.id, vendor);
+    return c.json({ vendor }, 201);
+  });
+
   return app;
 }
