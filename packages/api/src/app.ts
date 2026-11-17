@@ -1225,5 +1225,61 @@ export function createApp(deps: AppDependencies = {}): Hono<{ Variables: AppVari
     return c.json({ task, progress: event.calculateProgress(eventTasks) });
   });
 
+  // Cronograma Minuto a Minuto y Detección de Conflictos (CP-AGE-04)
+  app.post('/api/v1/events/:id/agenda', async (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const event = resolveAuthorizedEvent(c.req.param('id'), user);
+    const data = createAgendaItemSchema.parse(await c.req.json());
+
+    const currentItems = Array.from(store.agendaItems.values()).filter(
+      (a) => a.eventId === event.id
+    );
+
+    const candidate = new AgendaItemEntity({
+      id: `agd-${crypto.randomUUID().slice(0, 8)}`,
+      eventId: event.id,
+      title: data.title,
+      startTime: data.startTime,
+      endTime: data.endTime,
+      responsiblePerson: data.responsiblePerson,
+      locationDetail: data.locationDetail,
+      notes: data.notes,
+      orderIndex: currentItems.length
+    });
+
+    const conflicts = detectTimelineConflicts([...currentItems, candidate]);
+    if (conflicts.length > 0) {
+      throw new ConflictError(conflicts[0].reason);
+    }
+
+    store.agendaItems.set(candidate.id, candidate);
+    return c.json({ item: candidate }, 201);
+  });
+
+  app.put('/api/v1/events/:id/agenda/reorder', async (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const event = resolveAuthorizedEvent(c.req.param('id'), user);
+    const { orderedIds } = reorderAgendaSchema.parse(await c.req.json());
+
+    const currentItems = Array.from(store.agendaItems.values()).filter(
+      (a) => a.eventId === event.id
+    );
+    const reordered = reorderTimeline(currentItems, orderedIds);
+    for (const updated of reordered) {
+      const entity = store.agendaItems.get(updated.id);
+      if (entity) {
+        entity.reposition(updated.orderIndex);
+      }
+    }
+
+    return c.json({
+      agenda: Array.from(store.agendaItems.values())
+        .filter((a) => a.eventId === event.id)
+        .sort((a, b) => a.orderIndex - b.orderIndex)
+    });
+  });
+
   return app;
 }
