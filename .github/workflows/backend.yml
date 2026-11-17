@@ -1,0 +1,40 @@
+name: BackEnd CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build:
+    name: BackEnd - Build y Pruebas (UAT)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint --workspace=packages/api
+      - run: npm run build --workspace=packages/api
+
+      - name: Pruebas unitarias (reporte JUnit)
+        run: npx vitest run --project @planora/api
+        env:
+          VITEST_JUNIT_FILE: reports/backend-junit.xml
+
+      - name: Publicar reporte UAT
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: UAT Report - BackEnd
+          path: reports/backend-junit.xml
+          reporter: java-junit
+
+      - name: Cobertura
+        run: npm run test:coverage
