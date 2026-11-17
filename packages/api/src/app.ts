@@ -1044,6 +1044,69 @@ export function createApp(deps: AppDependencies = {}): Hono<{ Variables: AppVari
     return c.json({ report });
   });
 
+  // Presupuesto y Gastos (CP-FIN-01 & CP-SEC-05)
+  app.get('/api/v1/events/:id/budget', (c) => {
+    const user = c.get('user');
+    const event = resolveAuthorizedEvent(c.req.param('id'), user);
+    const eventExpenses = Array.from(store.expenses.values()).filter(
+      (ex) => ex.eventId === event.id
+    );
+    const budget = calculateBudgetStatus(event.initialBudget, eventExpenses);
+
+    return c.json({
+      budget,
+      expenses: user.role === 'client' ? [] : eventExpenses
+    });
+  });
+
+  app.post('/api/v1/events/:id/expenses', async (c) => {
+    const user = c.get('user');
+    // Regla estricta CP-SEC-05: rol client recibe 403 Forbidden antes de mutar cualquier gasto
+    assertRole(user, ['admin', 'organizer']);
+
+    const event = resolveAuthorizedEvent(c.req.param('id'), user);
+    const data = createExpenseSchema.parse(await c.req.json());
+
+    const expense = new ExpenseEntity({
+      id: `exp-${crypto.randomUUID().slice(0, 8)}`,
+      eventId: event.id,
+      eventServiceId: data.eventServiceId,
+      concept: data.concept,
+      category: data.category,
+      amount: data.amount,
+      dueDate: data.dueDate,
+      paymentStatus: data.paymentStatus,
+      paidAt: data.paymentStatus === 'paid' ? new Date().toISOString() : null
+    });
+
+    store.expenses.set(expense.id, expense);
+
+    const allEventExpenses = Array.from(store.expenses.values()).filter(
+      (ex) => ex.eventId === event.id
+    );
+    const budget = calculateBudgetStatus(event.initialBudget, allEventExpenses);
+
+    return c.json({ expense, budget }, 201);
+  });
+
+  app.post('/api/v1/events/:id/expenses/:expenseId/pay', async (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const event = resolveAuthorizedEvent(c.req.param('id'), user);
+    const expense = store.expenses.get(c.req.param('expenseId'));
+
+    if (!expense || expense.eventId !== event.id) {
+      throw new NotFoundError('Gasto no encontrado');
+    }
+
+    const { receiptFileName, contentBase64 } = registerPaymentSchema.parse(await c.req.json());
+    const key = `receipts/${event.id}/${expense.id}-${receiptFileName}`;
+    await storage.putObject(key, contentBase64, 'application/pdf');
+    expense.registerPayment(key);
+
+    return c.json({ expense });
+  });
+
   // Proveedores y Contratos en Cloudflare R2
   app.get('/api/v1/vendors', (c) => {
     const user = c.get('user');
