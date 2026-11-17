@@ -1,0 +1,53 @@
+# ==============================================================================
+# Planora API — Imagen Docker multi-stage (Node.js 20 Alpine)
+# Ejecuta la misma app Hono de Cloudflare Workers sobre Node (@hono/node-server).
+# Construir desde la raíz del monorepo:  docker build -f docker/Dockerfile.api -t planora-api .
+# ==============================================================================
+
+# ---------- Etapa 1: compilación ----------
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+# Manifiestos del monorepo (npm workspaces necesita ambos package.json)
+COPY package.json package-lock.json tsconfig.base.json ./
+COPY packages/api/package.json packages/api/
+COPY packages/frontend/package.json packages/frontend/
+
+# --ignore-scripts: la compilación con tsc no necesita binarios nativos (p. ej. better-sqlite3 de las pruebas)
+RUN npm ci --workspace=packages/api --include-workspace-root --ignore-scripts --no-audit --no-fund
+
+COPY packages/api packages/api
+RUN npm run build --workspace=packages/api
+
+# ---------- Etapa 2: dependencias de producción ----------
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY packages/api/package.json packages/api/
+COPY packages/frontend/package.json packages/frontend/
+RUN npm ci --omit=dev --workspace=packages/api --no-audit --no-fund \
+    && npm cache clean --force
+
+# ---------- Etapa 3: imagen final ----------
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production \
+    PORT=8787
+
+# Usuario sin privilegios dedicado para la API
+RUN addgroup -S planora && adduser -S -G planora planora
+
+COPY --from=deps --chown=planora:planora /app/node_modules ./node_modules
+COPY --from=deps --chown=planora:planora /app/package.json ./package.json
+COPY --from=builder --chown=planora:planora /app/packages/api/package.json ./packages/api/package.json
+COPY --from=builder --chown=planora:planora /app/packages/api/dist ./packages/api/dist
+
+USER planora
+
+EXPOSE 8787
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- "http://127.0.0.1:${PORT}/api/v1/health" > /dev/null || exit 1
+
+CMD ["node", "packages/api/dist/server.node.js"]
