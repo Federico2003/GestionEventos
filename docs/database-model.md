@@ -32,6 +32,8 @@ erDiagram
     CLIENTS ||--o{ EVENTS : "es_titular_de"
     
     EVENTS ||--o{ GUESTS : "tiene"
+    EVENTS ||--o{ EVENT_TABLES : "distribuye"
+    EVENT_TABLES ||--o{ GUESTS : "sienta_a"
     EVENTS ||--o{ EVENT_SERVICES : "contrata"
     SERVICES ||--o{ EVENT_SERVICES : "es_contratado_en"
     VENDORS ||--o{ SERVICES : "ofrece"
@@ -49,6 +51,7 @@ erDiagram
         text password_hash
         text role
         text phone
+        integer is_active
         text created_at
         text updated_at
     }
@@ -89,12 +92,23 @@ erDiagram
         text last_name
         text email
         text phone
-        integer table_number
+        integer table_number FK "nullable"
         text rsvp_status
         integer plus_ones
         text meal_preference
         text allergies
+        integer has_critical_allergies
         text dietary_restrictions
+        text created_at
+        text updated_at
+    }
+
+    EVENT_TABLES {
+        text id PK
+        text event_id FK
+        integer table_number
+        text label
+        integer capacity
         text created_at
         text updated_at
     }
@@ -192,17 +206,22 @@ erDiagram
    - Todo evento está vinculado a un cliente titular obligatorio (`N:1`).
 4. **Relación Evento - Invitados (1:N):**
    - Un evento tiene una lista de asistentes asociados. Si se elimina el evento, se eliminan sus invitados en cascada (`ON DELETE CASCADE`).
-5. **Relación Proveedores - Servicios (1:N):**
+   - Cada invitado registra su perfil gastronómico (`meal_preference`, `allergies`, `dietary_restrictions`) y la bandera `has_critical_allergies`, que marca alergias de riesgo médico para el Reporte Oficial para Catering.
+5. **Relación Evento - Mesas - Invitados (1:N y 1:N):**
+   - Un evento da de alta sus mesas físicas en `event_tables`, cada una con su número y capacidad máxima de sillas (`capacity`).
+   - Un invitado se sienta opcionalmente en una mesa de su mismo evento mediante la llave foránea compuesta `(event_id, table_number)`, lo que impide asignarlo a una mesa inexistente o de otro evento. La validación de aforo (titular + acompañantes ≤ `capacity`) se ejecuta en la capa de dominio (`assignTable`). No se puede eliminar una mesa que aún tenga invitados sentados; primero deben reasignarse.
+6. **Relación Proveedores - Servicios (1:N):**
    - Un proveedor comercial ofrece un catálogo de uno o más servicios estándar (e.g., "Paquete Básico", "Paquete Platino") (`1:N`).
-6. **Relación Eventos - Servicios (N:M a través de `event_services`):**
+7. **Relación Eventos - Servicios (N:M a través de `event_services`):**
    - Un evento contrata múltiples servicios, y un servicio puede ser contratado en múltiples eventos a lo largo del tiempo.
    - La tabla asociativa `event_services` materializa esta relación muchos a muchos y contiene atributos de negociación específicos: `agreed_price`, `status`, `contract_url` y `notes`.
-7. **Relación Evento / Contratación - Gastos (1:N):**
+8. **Relación Evento / Contratación - Gastos (1:N):**
    - Todo gasto pertenece obligatoriamente a un evento (`1:N`).
    - Opcionalmente, un gasto puede estar ligado a un servicio contratado específico (`event_services`), lo que permite saber qué porcentaje del contrato del proveedor ya ha sido liquidado.
-8. **Relación Evento - Tareas (1:N):**
+   - Las categorías de gasto usan la misma lista que las de proveedor, más `contingency` para imprevistos que no provienen de un proveedor. Así, el gasto generado automáticamente al contratar un servicio hereda la categoría del proveedor sin conversiones.
+9. **Relación Evento - Tareas (1:N):**
    - Un evento cuenta con su propio listado de tareas operativas (`1:N`). Cada tarea puede estar asignada opcionalmente a un miembro del equipo (`assigned_to -> users.id`).
-9. **Relación Evento - Agenda / Cronograma (1:N):**
+10. **Relación Evento - Agenda / Cronograma (1:N):**
    - Un evento posee múltiples bloques temporales secuenciales que forman el itinerario del día (`1:N`), ordenados por `order_index`.
 
 ---
@@ -221,6 +240,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('admin', 'organizer', 'client')),
     phone TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
@@ -271,7 +291,22 @@ CREATE INDEX IF NOT EXISTS idx_events_client ON events(client_id);
 CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date);
 CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
 
--- 4. TABLA: guests
+-- 4. TABLA: event_tables (Mesas físicas del evento y su aforo)
+CREATE TABLE IF NOT EXISTS event_tables (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    table_number INTEGER NOT NULL CHECK (table_number > 0),
+    label TEXT,
+    capacity INTEGER NOT NULL CHECK (capacity > 0),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+    UNIQUE (event_id, table_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_tables_event ON event_tables(event_id);
+
+-- 5. TABLA: guests
 CREATE TABLE IF NOT EXISTS guests (
     id TEXT PRIMARY KEY,
     event_id TEXT NOT NULL,
@@ -284,18 +319,21 @@ CREATE TABLE IF NOT EXISTS guests (
     plus_ones INTEGER NOT NULL DEFAULT 0 CHECK (plus_ones >= 0),
     meal_preference TEXT NOT NULL DEFAULT 'standard' CHECK (meal_preference IN ('standard', 'vegetarian', 'vegan', 'child', 'kosher', 'other')),
     allergies TEXT,
+    has_critical_allergies INTEGER NOT NULL DEFAULT 0 CHECK (has_critical_allergies IN (0, 1)),
     dietary_restrictions TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+    FOREIGN KEY (event_id, table_number) REFERENCES event_tables(event_id, table_number)
 );
 
 CREATE INDEX IF NOT EXISTS idx_guests_event ON guests(event_id);
 CREATE INDEX IF NOT EXISTS idx_guests_rsvp ON guests(rsvp_status);
 CREATE INDEX IF NOT EXISTS idx_guests_table ON guests(event_id, table_number);
 CREATE INDEX IF NOT EXISTS idx_guests_meal ON guests(event_id, meal_preference);
+CREATE INDEX IF NOT EXISTS idx_guests_critical ON guests(event_id, has_critical_allergies);
 
--- 5. TABLA: vendors
+-- 6. TABLA: vendors
 CREATE TABLE IF NOT EXISTS vendors (
     id TEXT PRIMARY KEY,
     organizer_id TEXT NOT NULL,
@@ -313,7 +351,7 @@ CREATE TABLE IF NOT EXISTS vendors (
 CREATE INDEX IF NOT EXISTS idx_vendors_organizer ON vendors(organizer_id);
 CREATE INDEX IF NOT EXISTS idx_vendors_category ON vendors(category);
 
--- 6. TABLA: services
+-- 7. TABLA: services
 CREATE TABLE IF NOT EXISTS services (
     id TEXT PRIMARY KEY,
     vendor_id TEXT NOT NULL,
@@ -327,7 +365,7 @@ CREATE TABLE IF NOT EXISTS services (
 
 CREATE INDEX IF NOT EXISTS idx_services_vendor ON services(vendor_id);
 
--- 7. TABLA: event_services (Relación N:M entre Eventos y Servicios)
+-- 8. TABLA: event_services (Relación N:M entre Eventos y Servicios)
 CREATE TABLE IF NOT EXISTS event_services (
     id TEXT PRIMARY KEY,
     event_id TEXT NOT NULL,
@@ -345,13 +383,13 @@ CREATE TABLE IF NOT EXISTS event_services (
 CREATE INDEX IF NOT EXISTS idx_event_services_event ON event_services(event_id);
 CREATE INDEX IF NOT EXISTS idx_event_services_service ON event_services(service_id);
 
--- 8. TABLA: expenses
+-- 9. TABLA: expenses
 CREATE TABLE IF NOT EXISTS expenses (
     id TEXT PRIMARY KEY,
     event_id TEXT NOT NULL,
     event_service_id TEXT,
     concept TEXT NOT NULL,
-    category TEXT NOT NULL CHECK (category IN ('catering', 'music', 'decoration', 'venue', 'logistics', 'contingency', 'other')),
+    category TEXT NOT NULL CHECK (category IN ('catering', 'photography', 'music_dj', 'venue', 'decoration', 'flowers', 'security', 'transport', 'contingency', 'other')),
     amount REAL NOT NULL CHECK (amount > 0.0),
     due_date TEXT,
     payment_status TEXT NOT NULL DEFAULT 'pending' CHECK (payment_status IN ('pending', 'partial', 'paid')),
@@ -366,7 +404,7 @@ CREATE TABLE IF NOT EXISTS expenses (
 CREATE INDEX IF NOT EXISTS idx_expenses_event ON expenses(event_id);
 CREATE INDEX IF NOT EXISTS idx_expenses_status ON expenses(payment_status);
 
--- 9. TABLA: tasks
+-- 10. TABLA: tasks
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     event_id TEXT NOT NULL,
@@ -374,7 +412,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     title TEXT NOT NULL,
     description TEXT,
     priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
-    status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'in_progress', 'completed')),
+    status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'in_progress', 'completed', 'cancelled')),
     due_date TEXT NOT NULL,
     completed_at TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -387,7 +425,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_event ON tasks(event_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
 
--- 10. TABLA: agenda_items
+-- 11. TABLA: agenda_items
 CREATE TABLE IF NOT EXISTS agenda_items (
     id TEXT PRIMARY KEY,
     event_id TEXT NOT NULL,
