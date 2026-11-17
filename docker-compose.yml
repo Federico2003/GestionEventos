@@ -1,0 +1,44 @@
+# Planora — Solución completa en local (API + Frontend)
+#   docker compose up -d --build
+#   Frontend: http://localhost:3000   API: http://localhost:8787/api/v1/health
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    image: planora-api:local
+    container_name: planora-api
+    ports:
+      - '8787:8787'
+    environment:
+      NODE_ENV: production
+      PORT: '8787'
+      SENTRY_ENVIRONMENT: docker
+      JWT_SECRET: ${JWT_SECRET:-planora-docker-local-secret-2026}
+      ALLOWED_ORIGINS: http://localhost:3000
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    networks:
+      - planora-net
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+      args:
+        VITE_API_URL: http://localhost:8787/api/v1
+        VITE_APP_ENV: docker
+    image: planora-web:local
+    container_name: planora-web
+    ports:
+      - '3000:80'
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - planora-net
+    restart: unless-stopped
+
+networks:
+  planora-net:
+    driver: bridge
