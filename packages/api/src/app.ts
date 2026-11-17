@@ -693,5 +693,212 @@ export function createApp(deps: AppDependencies = {}): Hono<{ Variables: AppVari
     return c.body(null, 204);
   });
 
+  // Eventos
+  app.get('/api/v1/events', (c) => {
+    const user = c.get('user');
+    const list = Array.from(store.events.values())
+      .filter((ev) => {
+        if (user.role === 'admin') return true;
+        if (user.role === 'organizer') return ev.organizerId === user.userId;
+        const cli = store.clients.get(ev.clientId);
+        return cli?.userId === user.userId;
+      })
+      .map((ev) => {
+        const cli = store.clients.get(ev.clientId);
+        const gsts = Array.from(store.guests.values()).filter((g) => g.eventId === ev.id);
+        const tasks = Array.from(store.tasks.values()).filter((t) => t.eventId === ev.id);
+        const exps = Array.from(store.expenses.values()).filter((x) => x.eventId === ev.id);
+        const budget = calculateBudgetStatus(ev.initialBudget, exps);
+        const rsvp = calculateRsvpMetrics(gsts);
+
+        return {
+          id: ev.id,
+          title: ev.title,
+          eventType: ev.eventType,
+          status: ev.status,
+          eventDate: ev.eventDate.toISOString(),
+          venueName: ev.venueName,
+          initialBudget: ev.initialBudget,
+          estimatedGuests: ev.estimatedGuests,
+          clientId: ev.clientId,
+          clientName: cli ? `${cli.firstName} ${cli.lastName}`.trim() : 'Sin cliente',
+          clientEmail: cli?.email ?? '',
+          confirmedSeats: rsvp.totalConfirmedSeats,
+          progress: ev.calculateProgress(tasks),
+          budgetStatus: budget.statusAlert,
+          spentPercentage: budget.spentPercentage
+        };
+      });
+
+    return c.json({ events: list });
+  });
+
+  app.post('/api/v1/events', async (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const data = createEventSchema.parse(await c.req.json());
+
+    const client = store.clients.get(data.clientId);
+    if (!client || (user.role === 'organizer' && client.organizerId !== user.userId)) {
+      throw new NotFoundError('El cliente especificado no existe');
+    }
+
+    const organizerId = user.role === 'organizer' ? user.userId : client.organizerId;
+    const event = new EventEntity({
+      id: `evt-${crypto.randomUUID().slice(0, 8)}`,
+      organizerId,
+      clientId: data.clientId,
+      title: data.title,
+      eventType: data.eventType,
+      status: 'draft',
+      eventDate: data.eventDate,
+      venueName: data.venueName,
+      venueAddress: data.venueAddress,
+      initialBudget: data.initialBudget,
+      estimatedGuests: data.estimatedGuests
+    });
+
+    store.events.set(event.id, event);
+    return c.json({ event: buildEventDetailPayload(event).event }, 201);
+  });
+
+  app.get('/api/v1/events/:id', (c) => {
+    const user = c.get('user');
+    const event = resolveAuthorizedEvent(c.req.param('id'), user);
+    const detail = buildEventDetailPayload(event);
+
+    if (user.role === 'client') {
+      // El cliente visualiza el resumen macro aprobado pero no partidas ni datos internos confidenciales
+      return c.json({
+        ...detail,
+        guests: detail.guests.map((g) => ({
+          ...g,
+          email: '',
+          phone: ''
+        })),
+        contracts: detail.contracts.map((ct) => ({
+          ...ct,
+          agreedPrice: 0,
+          notes: ''
+        })),
+        expenses: [],
+        tasks: [],
+        agendaConflicts: []
+      });
+    }
+
+    return c.json(detail);
+  });
+
+  app.patch('/api/v1/events/:id', async (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const event = resolveAuthorizedEvent(c.req.param('id'), user);
+    const changes = updateEventSchema.parse(await c.req.json());
+    event.updateDetails(changes);
+    return c.json({ event: buildEventDetailPayload(event).event });
+  });
+
+  app.delete('/api/v1/events/:id', (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const event = resolveAuthorizedEvent(c.req.param('id'), user);
+    event.ensureCanBeDeleted();
+
+    // Elimina en cascada los registros dependientes del evento
+    const dependentMaps = [
+      store.tables,
+      store.guests,
+      store.contracts,
+      store.expenses,
+      store.tasks,
+      store.agendaItems
+    ] as Array<Map<string, { eventId: string }>>;
+    for (const map of dependentMaps) {
+      for (const [key, record] of map) {
+        if (record.eventId === event.id) {
+          map.delete(key);
+        }
+      }
+    }
+    store.events.delete(event.id);
+    return c.body(null, 204);
+  });
+
+  app.post('/api/v1/events/:id/confirm', (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const event = resolveAuthorizedEvent(c.req.param('id'), user);
+    event.confirmEvent();
+    return c.json({ status: event.status, eventId: event.id });
+  });
+
+  app.post('/api/v1/events/:id/cancel', async (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const event = resolveAuthorizedEvent(c.req.param('id'), user);
+    const { reason } = cancelEventSchema.parse(await c.req.json());
+
+    const eventTasks = Array.from(store.tasks.values()).filter((t) => t.eventId === event.id);
+    const eventContracts = Array.from(store.contracts.values()).filter(
+      (ct) => ct.eventId === event.id
+    );
+    event.cancelEvent(reason, eventTasks, eventContracts);
+
+    return c.json({
+      status: event.status,
+      cancellationReason: event.cancellationReason
+    });
+  });
+
+  app.post('/api/v1/events/:id/clone', async (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const sourceEvent = resolveAuthorizedEvent(c.req.param('id'), user);
+    const { title, eventDate } = cloneEventSchema.parse(await c.req.json());
+
+    const clonedId = `evt-${crypto.randomUUID().slice(0, 8)}`;
+    const clonedEvent = sourceEvent.cloneStructure(clonedId, title, eventDate);
+    store.events.set(clonedEvent.id, clonedEvent);
+
+    // Clonar tareas operativas base (en estado todo) y esqueleto del cronograma
+    const sourceTasks = Array.from(store.tasks.values()).filter(
+      (t) => t.eventId === sourceEvent.id
+    );
+    for (const st of sourceTasks) {
+      const nt = new TaskEntity({
+        id: `tsk-${crypto.randomUUID().slice(0, 8)}`,
+        eventId: clonedEvent.id,
+        assignedTo: st.assignedTo,
+        title: st.title,
+        description: st.description,
+        priority: st.priority,
+        status: 'todo',
+        dueDate: eventDate.slice(0, 10)
+      });
+      store.tasks.set(nt.id, nt);
+    }
+
+    const sourceAgenda = Array.from(store.agendaItems.values()).filter(
+      (a) => a.eventId === sourceEvent.id
+    );
+    for (const sa of sourceAgenda) {
+      const na = new AgendaItemEntity({
+        id: `agd-${crypto.randomUUID().slice(0, 8)}`,
+        eventId: clonedEvent.id,
+        title: sa.title,
+        startTime: sa.startTime,
+        endTime: sa.endTime,
+        responsiblePerson: sa.responsiblePerson,
+        locationDetail: sa.locationDetail,
+        notes: sa.notes,
+        orderIndex: sa.orderIndex
+      });
+      store.agendaItems.set(na.id, na);
+    }
+
+    return c.json(buildEventDetailPayload(clonedEvent), 201);
+  });
+
   return app;
 }
