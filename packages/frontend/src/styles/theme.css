@@ -1,0 +1,263 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light dark;
+  --font-heading: 'Outfit', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+
+  /* MODO OSCURO POR DEFECTO (Negro Obsidian + Café Tronco) */
+  --bg-canvas: #0C0A09;
+  --bg-surface: #171412;
+  --bg-elevated: #211B17;
+  --bg-sidebar: #16110D;
+  --bg-topbar: #120E0B;
+  --bg-login-left: linear-gradient(135deg, #3B281E 0%, #1C140F 55%, #0C0A09 100%);
+  --bg-login-card: rgba(23, 20, 18, 0.90);
+  --bg-login-overlay: linear-gradient(
+    to top,
+    rgba(12, 10, 9, 0.88),
+    rgba(23, 20, 18, 0.50),
+    rgba(12, 10, 9, 0.72)
+  );
+  --bg-input: #0C0A09;
+  --bg-primary-btn: #6F4E37;
+  --bg-primary-btn-hover: #8C6245;
+
+  --text-main: #F6F3EE;
+  --text-muted: #A89888;
+  --text-accent: #C5A888;
+
+  --border-subtle: #2B211B;
+  --border-strong: #5C3E2B;
+}
+
+:root:has(> head > meta[name="color-scheme"][content="dark"]),
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+:root:has(> head > meta[name="color-scheme"][content="light"]),
+html[data-theme="light"] {
+  color-scheme: light;
+
+  /* MODO CLARO (Marfil Piedra + Café Tronco + Negro Carbón) */
+  --bg-canvas: #F6F3EE;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #EFECE6;
+  --bg-sidebar: #EAE2D6;
+  --bg-topbar: #E5DEC9;
+  --bg-login-left: linear-gradient(135deg, #F6F3EE 0%, #EAE2D6 55%, #DBCBB8 100%);
+  --bg-login-card: rgba(255, 255, 255, 0.94);
+  --bg-login-overlay: linear-gradient(
+    to top,
+    rgba(246, 243, 238, 0.78),
+    rgba(234, 226, 214, 0.30),
+    rgba(246, 243, 238, 0.65)
+  );
+  --bg-input: #F6F3EE;
+  --bg-primary-btn: #5C3E2B;
+  --bg-primary-btn-hover: #3B281E;
+
+  --text-main: #171412;
+  --text-muted: #6E5D4F;
+  --text-accent: #5C3E2B;
+
+  --border-subtle: #D8CFC2;
+  --border-strong: #8C6245;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--bg-canvas);
+  color: var(--text-main);
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+.heading-font {
+  font-family: var(--font-heading);
+}
+
+.surface-card {
+  background-color: var(--bg-surface);
+  color: var(--text-main);
+  border: 1px solid var(--border-subtle);
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+}
+
+.elevated-card {
+  background-color: var(--bg-elevated);
+  color: var(--text-main);
+  border: 1px solid var(--border-subtle);
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+}
+
+.sidebar-surface {
+  background-color: var(--bg-sidebar);
+  color: var(--text-main);
+  border-right: 1px solid var(--border-subtle);
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
+.topbar-surface {
+  background-color: var(--bg-topbar);
+  color: var(--text-main);
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
+.login-left-panel {
+  background: var(--bg-login-left);
+  color: var(--text-main);
+  border-right: 1px solid var(--border-subtle);
+  transition: background 0.3s ease, color 0.25s ease;
+}
+
+.login-card-surface {
+  background: var(--bg-login-card);
+  color: var(--text-main);
+  border: 1px solid var(--border-strong);
+  backdrop-filter: blur(12px);
+  transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+}
+
+.login-overlay-surface {
+  background: var(--bg-login-overlay);
+  transition: background 0.3s ease;
+}
+
+.input-adaptive {
+  background-color: var(--bg-input);
+  color: var(--text-main);
+  border: 1px solid var(--border-subtle);
+  font-size: 1rem;
+  min-height: 44px;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.input-adaptive:focus-visible {
+  outline: 2px solid var(--border-strong);
+  outline-offset: 2px;
+  border-color: var(--border-strong);
+}
+
+.text-secondary-tone {
+  color: var(--text-muted);
+}
+
+.text-wood-accent {
+  color: var(--text-accent);
+}
+
+.btn-trunk {
+  background-color: var(--bg-primary-btn);
+  color: #F6F3EE;
+  border: 1px solid var(--border-strong);
+  transition: background-color 0.2s ease;
+}
+
+.btn-trunk:hover:not(:disabled) {
+  background-color: var(--bg-primary-btn-hover);
+}
+
+.btn-trunk:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.visually-hidden {
+  position: absolute;
+  clip-path: inset(50%);
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  white-space: nowrap;
+}
+
+/* Tabla responsiva accesible con container queries */
+.table-wrapper {
+  overflow: auto;
+  max-inline-size: 100%;
+  max-block-size: min(520px, 80vh);
+  container-type: inline-size;
+}
+
+.table-wrapper table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.table-wrapper thead {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  background-color: var(--bg-elevated);
+}
+
+.table-wrapper tbody th {
+  position: sticky;
+  inset-inline-start: 0;
+  background-color: var(--bg-surface);
+}
+
+@container (width < 600px) {
+  .table-wrapper table,
+  .table-wrapper thead,
+  .table-wrapper tbody,
+  .table-wrapper tr,
+  .table-wrapper th,
+  .table-wrapper td {
+    display: block;
+  }
+
+  .table-wrapper thead {
+    display: none;
+  }
+
+  .table-wrapper tr {
+    margin-block-end: 0.75rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: 0.75rem;
+    padding: 0.5rem;
+  }
+
+  .table-wrapper tbody th {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 2;
+    background-color: var(--bg-elevated);
+    border-radius: 0.5rem;
+  }
+
+  .table-wrapper td:nth-child(2)::before {
+    content: var(--label-2) ": ";
+    font-weight: 600;
+  }
+  .table-wrapper td:nth-child(3)::before {
+    content: var(--label-3) ": ";
+    font-weight: 600;
+  }
+  .table-wrapper td:nth-child(4)::before {
+    content: var(--label-4) ": ";
+    font-weight: 600;
+  }
+  .table-wrapper td:nth-child(5)::before {
+    content: var(--label-5) ": ";
+    font-weight: 600;
+  }
+}
+
+@media (forced-colors: active) {
+  .surface-card,
+  .elevated-card,
+  .login-card-surface,
+  .btn-trunk,
+  .input-adaptive {
+    border: 1px solid CanvasText;
+  }
+}
