@@ -577,6 +577,15 @@ export function createApp(deps: AppDependencies = {}): Hono<{ Variables: AppVari
     };
   }
 
+  // Logout con revocación inmediata en KV
+  app.post('/api/v1/auth/logout', async (c) => {
+    const user = c.get('user');
+    const nowSec = Math.floor(Date.now() / 1000);
+    const ttl = Math.max(60, user.exp - nowSec);
+    await kv.put(`blacklist:${user.jti}`, 'revoked', { expirationTtl: ttl });
+    return c.body(null, 204);
+  });
+
   app.get('/api/v1/auth/me', (c) => {
     const payload = c.get('user');
     const existingUser = store.users.get(payload.userId);
