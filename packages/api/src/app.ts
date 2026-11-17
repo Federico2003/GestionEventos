@@ -599,6 +599,83 @@ export function createApp(deps: AppDependencies = {}): Hono<{ Variables: AppVari
     });
   });
 
+  // Dashboard consolidado
+  app.get('/api/v1/dashboard', (c) => {
+    const user = c.get('user');
+
+    const visibleEvents = Array.from(store.events.values()).filter((ev) => {
+      if (user.role === 'admin') return true;
+      if (user.role === 'organizer') return ev.organizerId === user.userId;
+      const cli = store.clients.get(ev.clientId);
+      return cli?.userId === user.userId;
+    });
+
+    let totalBudgetVolume = 0;
+    let totalSpentVolume = 0;
+    let totalConfirmedAttendees = 0;
+    let totalCriticalAllergies = 0;
+    let totalTablesCount = 0;
+
+    for (const ev of visibleEvents) {
+      totalBudgetVolume += ev.initialBudget;
+      const exps = Array.from(store.expenses.values()).filter((x) => x.eventId === ev.id);
+      totalSpentVolume += exps.reduce((acc, item) => acc + item.amount, 0);
+
+      const gsts = Array.from(store.guests.values()).filter((g) => g.eventId === ev.id);
+      const metrics = calculateRsvpMetrics(gsts);
+      totalConfirmedAttendees += metrics.totalConfirmedSeats;
+      totalCriticalAllergies += gsts.filter(
+        (g) => g.rsvpStatus === 'confirmed' && g.hasCriticalAllergies
+      ).length;
+
+      totalTablesCount += Array.from(store.tables.values()).filter(
+        (t) => t.eventId === ev.id
+      ).length;
+    }
+
+    const visibleEventIds = new Set(visibleEvents.map((ev) => ev.id));
+    const visibleTasks = Array.from(store.tasks.values()).filter((tk) =>
+      visibleEventIds.has(tk.eventId)
+    );
+    const now = new Date();
+    const upcomingEvents = visibleEvents
+      .filter((ev) => ev.status !== 'cancelled' && ev.status !== 'completed')
+      .filter((ev) => ev.eventDate.getTime() >= now.getTime())
+      .sort((a, b) => a.eventDate.getTime() - b.eventDate.getTime())
+      .slice(0, 5)
+      .map((ev) => ({
+        id: ev.id,
+        title: ev.title,
+        eventDate: ev.eventDate.toISOString(),
+        status: ev.status,
+        venueName: ev.venueName
+      }));
+    const visibleContractsCount = Array.from(store.contracts.values()).filter((ct) =>
+      visibleEventIds.has(ct.eventId)
+    ).length;
+
+    return c.json({
+      totalEvents: visibleEvents.length,
+      confirmedEvents: visibleEvents.filter((e) => e.status === 'confirmed').length,
+      draftEvents: visibleEvents.filter((e) => e.status === 'draft').length,
+      activeEvents: visibleEvents.filter((e) =>
+        ['planning', 'confirmed', 'in_progress'].includes(e.status)
+      ).length,
+      totalBudgetVolume,
+      totalSpentVolume,
+      overallExecutionPct:
+        totalBudgetVolume > 0
+          ? Number(((totalSpentVolume / totalBudgetVolume) * 100).toFixed(1))
+          : 0,
+      totalConfirmedAttendees,
+      totalTablesCount,
+      totalCriticalAllergies,
+      contractsInR2: visibleContractsCount,
+      overdueTasks: getOverdueTasks(visibleTasks, now).length,
+      upcomingEvents
+    });
+  });
+
   // Clientes (con aislamiento multitenant entre organizadores)
   app.get('/api/v1/clients', (c) => {
     const user = c.get('user');
