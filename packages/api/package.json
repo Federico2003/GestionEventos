@@ -1,0 +1,34 @@
+{
+  "name": "@planora/api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Planora Backend REST API — Hono + Clean Architecture (Cloudflare Workers & Node.js)",
+  "main": "dist/server.node.js",
+  "scripts": {
+    "dev": "tsx watch src/server.node.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint src tests scripts",
+    "start": "node dist/server.node.js",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:seed:generate": "tsx scripts/generate-seed.ts",
+    "db:migrate:local": "npx wrangler@4 d1 migrations apply DB --local --env dev",
+    "db:seed:local": "npx wrangler@4 d1 execute DB --local --env dev --file=seed/seed.sql"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "@sentry/cloudflare": "^11.12.0",
+    "@sentry/node": "^11.12.0",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.6.14",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261113.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "better-sqlite3": "^12.4.1",
+    "drizzle-kit": "^0.31.11",
+    "tsx": "^4.19.2"
+  }
+}
