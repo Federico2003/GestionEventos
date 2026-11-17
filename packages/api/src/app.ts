@@ -900,5 +900,149 @@ export function createApp(deps: AppDependencies = {}): Hono<{ Variables: AppVari
     return c.json(buildEventDetailPayload(clonedEvent), 201);
   });
 
+  // Mesas del Evento
+  app.post('/api/v1/events/:id/tables', async (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const event = resolveAuthorizedEvent(c.req.param('id'), user);
+    const data = createTableSchema.parse(await c.req.json());
+
+    const duplicate = Array.from(store.tables.values()).find(
+      (t) => t.eventId === event.id && t.tableNumber === data.tableNumber
+    );
+    if (duplicate) {
+      throw new ConflictError(`La Mesa ${data.tableNumber} ya existe en este evento`);
+    }
+
+    const table = new EventTable({
+      id: `tbl-${crypto.randomUUID().slice(0, 8)}`,
+      eventId: event.id,
+      tableNumber: data.tableNumber,
+      label: data.label,
+      capacity: data.capacity
+    });
+    store.tables.set(table.id, table);
+    return c.json({ table }, 201);
+  });
+
+  // Invitados, RSVP y Aforo de Mesas (CP-MES-02)
+  app.post('/api/v1/events/:id/guests', async (c) => {
+    const user = c.get('user');
+    const event = resolveAuthorizedEvent(c.req.param('id'), user);
+    const data = createGuestSchema.parse(await c.req.json());
+
+    const guest = new GuestEntity({
+      id: `gst-${crypto.randomUUID().slice(0, 8)}`,
+      eventId: event.id,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      email: data.email,
+      phone: data.phone,
+      rsvpStatus: data.rsvpStatus,
+      plusOnes: data.plusOnes,
+      mealPreference: data.mealPreference,
+      allergies: data.allergies,
+      hasCriticalAllergies: data.hasCriticalAllergies,
+      dietaryRestrictions: data.dietaryRestrictions
+    });
+
+    if (data.tableNumber !== null && data.tableNumber !== undefined) {
+      assertRole(user, ['admin', 'organizer']);
+      const targetTable = Array.from(store.tables.values()).find(
+        (t) => t.eventId === event.id && t.tableNumber === data.tableNumber
+      );
+      if (!targetTable) {
+        throw new NotFoundError(`La Mesa ${data.tableNumber} no está registrada en este evento`);
+      }
+      const eventGuests = Array.from(store.guests.values()).filter((g) => g.eventId === event.id);
+      assignGuestToTableWithOccupancy(guest, targetTable, eventGuests);
+    }
+
+    store.guests.set(guest.id, guest);
+    return c.json({ guestId: guest.id, guest }, 201);
+  });
+
+  app.patch('/api/v1/events/:id/guests/:guestId/rsvp', async (c) => {
+    const user = c.get('user');
+    const event = resolveAuthorizedEvent(c.req.param('id'), user);
+    const guestId = c.req.param('guestId');
+    const guest = store.guests.get(guestId);
+
+    if (!guest || guest.eventId !== event.id) {
+      throw new NotFoundError('Invitado no encontrado en el evento');
+    }
+
+    const data = updateRsvpSchema.parse(await c.req.json());
+
+    // Si tiene mesa asignada y no declina, validar que el nuevo número de acompañantes quepa
+    if (guest.tableNumber !== null && data.rsvpStatus !== 'declined') {
+      const table = Array.from(store.tables.values()).find(
+        (t) => t.eventId === event.id && t.tableNumber === guest.tableNumber
+      );
+      if (table) {
+        const eventGuests = Array.from(store.guests.values()).filter(
+          (g) => g.eventId === event.id
+        );
+        const seatedOthers = calculateSeatedAtTable(eventGuests, table.tableNumber, guest.id);
+        const tempGuest = new GuestEntity({
+          id: guest.id,
+          rsvpStatus: data.rsvpStatus,
+          plusOnes: data.plusOnes
+        });
+        tempGuest.assignTable(table, seatedOthers);
+      }
+    }
+
+    guest.registerRsvp(data.rsvpStatus, data.plusOnes);
+    if (data.mealPreference !== undefined) {
+      guest.registerDietaryProfile(
+        data.mealPreference,
+        data.allergies ?? guest.allergies,
+        data.hasCriticalAllergies ?? guest.hasCriticalAllergies,
+        data.dietaryRestrictions ?? guest.dietaryRestrictions
+      );
+    }
+
+    return c.json({ guest });
+  });
+
+  app.post('/api/v1/events/:id/guests/:guestId/assign-table', async (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const event = resolveAuthorizedEvent(c.req.param('id'), user);
+    const guestId = c.req.param('guestId');
+    const guest = store.guests.get(guestId);
+
+    if (!guest || guest.eventId !== event.id) {
+      throw new NotFoundError('Invitado no encontrado');
+    }
+
+    const { tableNumber } = assignTableSchema.parse(await c.req.json());
+    const table = Array.from(store.tables.values()).find(
+      (t) => t.eventId === event.id && t.tableNumber === tableNumber
+    );
+    if (!table) {
+      throw new NotFoundError(`La Mesa ${tableNumber} no existe en este evento`);
+    }
+
+    const eventGuests = Array.from(store.guests.values()).filter((g) => g.eventId === event.id);
+    assignGuestToTableWithOccupancy(guest, table, eventGuests);
+
+    return c.json({
+      guestId: guest.id,
+      tableNumber: guest.tableNumber,
+      seated: calculateSeatedAtTable(eventGuests, table.tableNumber)
+    });
+  });
+
+  // Reporte Oficial para Catering (CP-CAT-03)
+  app.get('/api/v1/events/:id/catering-report', (c) => {
+    const user = c.get('user');
+    const event = resolveAuthorizedEvent(c.req.param('id'), user);
+    const eventGuests = Array.from(store.guests.values()).filter((g) => g.eventId === event.id);
+    const report = generateCateringReport(eventGuests);
+    return c.json({ report });
+  });
+
   return app;
 }
