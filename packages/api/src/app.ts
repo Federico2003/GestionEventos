@@ -599,5 +599,99 @@ export function createApp(deps: AppDependencies = {}): Hono<{ Variables: AppVari
     });
   });
 
+  // Clientes (con aislamiento multitenant entre organizadores)
+  app.get('/api/v1/clients', (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+
+    const list = Array.from(store.clients.values()).filter((cli) =>
+      user.role === 'admin' ? true : cli.organizerId === user.userId
+    );
+    return c.json({ clients: list });
+  });
+
+  app.post('/api/v1/clients', async (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const data = createClientSchema.parse(await c.req.json());
+
+    let ownerOrganizerId = user.userId;
+    if (user.role === 'admin') {
+      if (data.organizerId) {
+        const targetOrganizer = store.users.get(data.organizerId);
+        if (!targetOrganizer || targetOrganizer.role === 'client') {
+          throw new NotFoundError('El organizador especificado no existe');
+        }
+        ownerOrganizerId = targetOrganizer.id;
+      } else {
+        ownerOrganizerId = 'u-org';
+      }
+    }
+
+    const client = new ClientEntity({
+      id: `cli-${crypto.randomUUID().slice(0, 8)}`,
+      organizerId: ownerOrganizerId,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      email: data.email,
+      phone: data.phone,
+      notes: data.notes
+    });
+    store.clients.set(client.id, client);
+    return c.json({ client }, 201);
+  });
+
+  app.get('/api/v1/clients/:id', (c) => {
+    const user = c.get('user');
+    const clientId = c.req.param('id');
+    const client = store.clients.get(clientId);
+
+    if (!client) {
+      throw new NotFoundError('Cliente no encontrado');
+    }
+
+    if (user.role === 'organizer' && client.organizerId !== user.userId) {
+      // Aislamiento estricto CP-SEC-05: 404 para no filtrar existencia entre organizadores
+      throw new NotFoundError('Cliente no encontrado');
+    }
+
+    if (user.role === 'client' && client.userId !== user.userId) {
+      throw new ForbiddenError('Solo puede consultar su propio perfil de cliente');
+    }
+
+    return c.json({ client });
+  });
+
+  app.put('/api/v1/clients/:id', async (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const clientId = c.req.param('id');
+    const client = store.clients.get(clientId);
+
+    if (!client || (user.role === 'organizer' && client.organizerId !== user.userId)) {
+      throw new NotFoundError('Cliente no encontrado');
+    }
+
+    const changes = updateClientSchema.parse(await c.req.json());
+    client.updateProfile(changes);
+    return c.json({ client });
+  });
+
+  app.delete('/api/v1/clients/:id', (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const clientId = c.req.param('id');
+    const client = store.clients.get(clientId);
+
+    if (!client || (user.role === 'organizer' && client.organizerId !== user.userId)) {
+      throw new NotFoundError('Cliente no encontrado');
+    }
+
+    const clientEvents = Array.from(store.events.values()).filter((e) => e.clientId === clientId);
+    client.ensureCanBeDeleted(clientEvents);
+    store.clients.delete(clientId);
+    return c.body(null, 204);
+  });
+
   return app;
 }
