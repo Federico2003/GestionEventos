@@ -1177,5 +1177,53 @@ export function createApp(deps: AppDependencies = {}): Hono<{ Variables: AppVari
     return c.json({ contract, objectMeta: stored });
   });
 
+  // Tareas Operativas
+  app.get('/api/v1/events/:id/tasks', (c) => {
+    const event = resolveAuthorizedEvent(c.req.param('id'), c.get('user'));
+    const eventTasks = Array.from(store.tasks.values()).filter((t) => t.eventId === event.id);
+    return c.json({
+      tasks: eventTasks,
+      overdue: getOverdueTasks(eventTasks),
+      progress: event.calculateProgress(eventTasks)
+    });
+  });
+
+  app.post('/api/v1/events/:id/tasks', async (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const event = resolveAuthorizedEvent(c.req.param('id'), user);
+    const data = createTaskSchema.parse(await c.req.json());
+
+    const task = new TaskEntity({
+      id: `tsk-${crypto.randomUUID().slice(0, 8)}`,
+      eventId: event.id,
+      assignedTo: data.assignedTo ?? user.userId,
+      title: data.title,
+      description: data.description,
+      priority: data.priority,
+      status: 'todo',
+      dueDate: data.dueDate
+    });
+    store.tasks.set(task.id, task);
+
+    const eventTasks = Array.from(store.tasks.values()).filter((t) => t.eventId === event.id);
+    return c.json({ task, progress: event.calculateProgress(eventTasks) }, 201);
+  });
+
+  app.patch('/api/v1/events/:id/tasks/:taskId/complete', (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const event = resolveAuthorizedEvent(c.req.param('id'), user);
+    const task = store.tasks.get(c.req.param('taskId'));
+
+    if (!task || task.eventId !== event.id) {
+      throw new NotFoundError('Tarea no encontrada');
+    }
+
+    task.completeTask();
+    const eventTasks = Array.from(store.tasks.values()).filter((t) => t.eventId === event.id);
+    return c.json({ task, progress: event.calculateProgress(eventTasks) });
+  });
+
   return app;
 }
