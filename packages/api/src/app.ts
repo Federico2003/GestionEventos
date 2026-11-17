@@ -1068,5 +1068,51 @@ export function createApp(deps: AppDependencies = {}): Hono<{ Variables: AppVari
     return c.json({ vendor }, 201);
   });
 
+  app.post('/api/v1/events/:id/contracts', async (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const event = resolveAuthorizedEvent(c.req.param('id'), user);
+    const data = createContractSchema.parse(await c.req.json());
+
+    const contract = new EventServiceEntity({
+      id: `ctr-${crypto.randomUUID().slice(0, 8)}`,
+      eventId: event.id,
+      serviceId: data.serviceId,
+      serviceName: data.serviceName,
+      vendorName: data.vendorName,
+      category: data.category,
+      agreedPrice: data.agreedPrice,
+      notes: data.notes,
+      status: 'contracted'
+    });
+    store.contracts.set(contract.id, contract);
+
+    let generatedExpense: ExpenseEntity | null = null;
+    if (data.autoGenerateExpense) {
+      generatedExpense = contract.generateExpense(`exp-${crypto.randomUUID().slice(0, 8)}`);
+      store.expenses.set(generatedExpense.id, generatedExpense);
+    }
+
+    return c.json({ contract, generatedExpense }, 201);
+  });
+
+  app.post('/api/v1/events/:id/contracts/:contractId/document', async (c) => {
+    const user = c.get('user');
+    assertRole(user, ['admin', 'organizer']);
+    const event = resolveAuthorizedEvent(c.req.param('id'), user);
+    const contract = store.contracts.get(c.req.param('contractId'));
+
+    if (!contract || contract.eventId !== event.id) {
+      throw new NotFoundError('Contrato no encontrado');
+    }
+
+    const { fileName, contentBase64 } = attachContractDocSchema.parse(await c.req.json());
+    const key = `contracts/${event.id}/${contract.id}-${fileName}`;
+    const stored = await storage.putObject(key, contentBase64, 'application/pdf');
+    contract.attachContractDocument(key);
+
+    return c.json({ contract, objectMeta: stored });
+  });
+
   return app;
 }
