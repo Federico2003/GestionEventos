@@ -25,6 +25,12 @@ NODE_ENV = "development"
 API_VERSION = "v1"
 SENTRY_TRACES_SAMPLE_RATE = "1.0"
 
+# Rate limiting de autenticación: 10 peticiones / 10 s por IP (responde 429)
+[[env.dev.ratelimits]]
+name = "AUTH_RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 10, period = 10 }
+
 [[env.dev.d1_databases]]
 binding = "DB"
 database_name = "planora-d1-dev"
@@ -52,6 +58,12 @@ ENVIRONMENT = "production"
 NODE_ENV = "production"
 API_VERSION = "v1"
 SENTRY_TRACES_SAMPLE_RATE = "0.2"
+
+# Rate limiting de autenticación: 10 peticiones / 10 s por IP (responde 429)
+[[env.production.ratelimits]]
+name = "AUTH_RATE_LIMITER"
+namespace_id = "1002"
+simple = { limit = 10, period = 10 }
 
 [[env.production.d1_databases]]
 binding = "DB"

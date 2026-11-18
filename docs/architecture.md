@@ -242,7 +242,7 @@ Construida como una Single Page Application (SPA) sobre React 18 y TypeScript, o
 La infraestructura distribuida de Cloudflare actúa como la primera línea de procesamiento y enrutamiento en el borde:
 1. **Anycast DNS:** Resuelve la dirección IP del usuario hacia el centro de datos de Cloudflare más cercano físicamente (<10 ms).
 2. **WAF & DDoS Shield:** Filtra tráfico malicioso, mitiga ataques distribuidos de denegación de servicio e implementa terminación TLS 1.3 con certificados automáticos.
-   - **Regla de Rate Limiting:** bloquea durante 10 s a la IP que haga más de 10 peticiones en 10 s hacia `/api/v1/auth/*`, frenando ataques de fuerza bruta contra el login antes de que lleguen al Worker. Se usa la regla nativa del WAF (incluida en el plan Free) porque cuenta las peticiones de forma confiable en la red de Cloudflare; KV no es adecuado para contadores por su consistencia eventual.
+   - **Rate Limiting de Workers:** el binding `ratelimits` (`AUTH_RATE_LIMITER`, declarado en `wrangler.toml`) limita a 10 peticiones en 10 s por IP las rutas `/api/v1/auth/*` y responde **429** con `Retry-After: 10`, frenando ataques de fuerza bruta contra el login. Se usa el limitador nativo de Workers porque las reglas de rate limiting del WAF solo aplican a zonas con dominio propio (no a `*.workers.dev`), y KV no es adecuado para contadores por su consistencia eventual.
 3. **Cloudflare Edge Dispatcher:**
    - Si la ruta solicitada corresponde a la aplicación web (`/`, `/assets/*`, `/favicon.ico`), sirve los archivos precompilados en caché global desde **Cloudflare Pages**.
    - Si la ruta comienza con `/api/v1/*`, despacha la solicitud directamente hacia el runtime de **Cloudflare Workers**.
@@ -344,7 +344,7 @@ La solución se ejecuta de forma nativa en Cloudflare. Para leerla con una notac
 | Usuarios / Actores | Navegadores web y móviles | General / Users | Organizadores, clientes y administradores. |
 | Frontend SPA | Cloudflare Pages | Azure Static Web Apps | Aloja y distribuye el bundle de React + Vite. |
 | DNS y enrutamiento global | Cloudflare Anycast DNS | Azure DNS | Resolución hacia el nodo de borde más cercano. |
-| Seguridad perimetral | Cloudflare WAF, DDoS y regla de Rate Limiting | Azure Front Door + Azure Web Application Firewall | Filtrado de ataques, mitigación DDoS, rate limiting, TLS 1.3 y enrutamiento `/` vs `/api/v1/*`. |
+| Seguridad perimetral | Cloudflare DDoS y Rate Limiting de Workers | Azure Front Door + Azure Web Application Firewall | Filtrado de ataques, mitigación DDoS, rate limiting, TLS 1.3 y enrutamiento `/` vs `/api/v1/*`. |
 | API Gateway | Hono Router (en Workers) | Azure API Management | Rutas `/api/v1/*`, CORS, autenticación y validación Zod. |
 | Cómputo serverless | Cloudflare Workers | Azure Functions | Ejecuta controladores y servicios de dominio. |
 | Base de datos relacional | Cloudflare D1 (SQLite) | Azure SQL Database Serverless | Datos transaccionales ACID. |
