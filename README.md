@@ -41,7 +41,7 @@ Usuario → Frontend (React SPA) → Cloudflare Edge (WAF/DNS) → API Gateway (
 ```
 
 - **Frontend (Capa de Presentación):** Single Page Application en **React 18 + TypeScript + Vite + Tailwind CSS**, servida desde **Cloudflare Pages**.
-- **Edge Routing & Seguridad:** Cloudflare Anycast DNS, WAF con terminación TLS 1.3, regla de *rate limiting* en `/api/v1/auth/*` y enrutamiento inteligente de tráfico estático y API.
+- **Edge Routing & Seguridad:** Cloudflare Anycast DNS, protección DDoS con TLS 1.3, *rate limiting* de Workers en `/api/v1/auth/*` (10 peticiones / 10 s por IP, responde 429) y enrutamiento inteligente de tráfico estático y API.
 - **Backend API (API Gateway & Controladores):** Microframework **Hono** sobre **Cloudflare Workers** (tiempo de arranque en frío de 0 ms mediante V8 Isolates) con validación estricta de esquemas Zod.
 - **Capa de Servicios y Dominio:** Lógica de negocio pura (presupuestos, RSVP, itinerarios) desacoplada de la infraestructura mediante Puertos e Inversión de Dependencias (DIP).
 - **Persistencia Transaccional:** **Cloudflare D1** (SQLite relacional distribuido) operado mediante **Drizzle ORM** (cero sobrecarga en tiempo de ejecución).

@@ -29,7 +29,8 @@ import {
   InMemoryKV,
   InMemoryObjectStorage,
   type KVStore,
-  type ObjectStoragePort
+  type ObjectStoragePort,
+  type RateLimiterPort
 } from './infrastructure/ports';
 import { NotConfiguredDatabase, type DatabaseHealthPort } from './infrastructure/db/d1';
 import { NoopTelemetry, type TelemetryPort } from './infrastructure/telemetry';
@@ -69,6 +70,8 @@ export interface AppDependencies {
   store?: PlanoraDataStore;
   telemetry?: TelemetryPort;
   database?: DatabaseHealthPort;
+  /** Limitador para `/api/v1/auth/*` (10 peticiones / 10 s por IP en Cloudflare). */
+  authRateLimiter?: RateLimiterPort;
   environment?: string;
   jwtSecret?: string;
   allowedOrigins?: string[];
@@ -346,6 +349,34 @@ export function createApp(deps: AppDependencies = {}): Hono<{ Variables: AppVari
         });
       }
     );
+  });
+
+  // Rate limiting contra fuerza bruta en autenticación (binding ratelimits de Workers)
+  app.use('/api/v1/auth/*', async (c, next) => {
+    if (!deps.authRateLimiter) {
+      await next();
+      return;
+    }
+    const clientIp =
+      c.req.header('cf-connecting-ip') ??
+      c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ??
+      'anonymous';
+    const { success } = await deps.authRateLimiter.limit({ key: `auth:${clientIp}` });
+    if (!success) {
+      telemetry.log('warn', `Rate limit excedido en ${c.req.method} ${c.req.path}`, {
+        'http.request.method': c.req.method,
+        'url.path': c.req.path
+      });
+      c.header('Retry-After', '10');
+      return c.json(
+        {
+          error: 'TOO_MANY_REQUESTS',
+          message: 'Demasiadas peticiones de autenticación. Intenta de nuevo en 10 segundos.'
+        },
+        429
+      );
+    }
+    await next();
   });
 
   // Login público

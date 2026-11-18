@@ -1,3 +1,11 @@
+/**
+ * Limitador de peticiones (binding `ratelimits` de Cloudflare Workers).
+ * `limit` devuelve `success: false` cuando la llave superó el límite configurado.
+ */
+export interface RateLimiterPort {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
+}
+
 export interface KVStore {
   get(key: string): Promise<string | null>;
   put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
