@@ -72,15 +72,18 @@ jobs:
           cache: npm
       - run: npm ci
       - name: ID de la base D1 (variable D1_DATABASE_ID)
-        run: sed -i "s/__D1_DATABASE_ID__/${{ vars.D1_DATABASE_ID }}/" packages/api/wrangler.toml
+        run: |
+          if [ -z "${{ vars.D1_DATABASE_ID }}" ]; then
+            echo "::error::Falta la variable D1_DATABASE_ID en el environment dev"
+            exit 1
+          fi
+          sed -i "s/__D1_DATABASE_ID__/${{ vars.D1_DATABASE_ID }}/" packages/api/wrangler.toml
       - name: Migraciones D1
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: "4"
-          workingDirectory: packages/api
-          command: d1 migrations apply DB --remote --env dev
+        working-directory: packages/api
+        run: npx --yes wrangler@4 d1 migrations apply DB --remote --env dev
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Deploy del Worker
         uses: cloudflare/wrangler-action@v3
         with:
@@ -112,15 +115,18 @@ jobs:
           cache: npm
       - run: npm ci
       - name: ID de la base D1 (variable D1_DATABASE_ID)
-        run: sed -i "s/__D1_DATABASE_ID__/${{ vars.D1_DATABASE_ID }}/" packages/api/wrangler.toml
+        run: |
+          if [ -z "${{ vars.D1_DATABASE_ID }}" ]; then
+            echo "::error::Falta la variable D1_DATABASE_ID en el environment production"
+            exit 1
+          fi
+          sed -i "s/__D1_DATABASE_ID__/${{ vars.D1_DATABASE_ID }}/" packages/api/wrangler.toml
       - name: Migraciones D1
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: "4"
-          workingDirectory: packages/api
-          command: d1 migrations apply DB --remote --env production
+        working-directory: packages/api
+        run: npx --yes wrangler@4 d1 migrations apply DB --remote --env production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Deploy del Worker
         uses: cloudflare/wrangler-action@v3
         with:
