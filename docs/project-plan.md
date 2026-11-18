@@ -2,7 +2,7 @@
 
 **Metodología:** Ágil / Kanban Adaptado para Desarrollo Individual  
 **Herramienta de Gestión:** GitHub Projects v2  
-**Ciclo de Entrega:** 9 Fases de Ingeniería alineadas a 10 Milestones evaluables  
+**Ciclo de Entrega:** 8 Fases de Ingeniería alineadas a 10 Milestones evaluables  
 
 ---
 
@@ -26,7 +26,7 @@ El tablero de GitHub Projects se configura con 6 columnas estandarizadas de fluj
 1. **TODO $\rightarrow$ IN PROGRESS:** El desarrollador crea la rama `feature/<id>-<slug>` y se autoasigna la tarea.
 2. **IN PROGRESS $\rightarrow$ REVIEW:** Se abre el Pull Request contra `develop` vinculando el Issue con la sintaxis `Closes #ID`.
 3. **REVIEW $\rightarrow$ TESTING:** El PR está listo y se disparan los workflows automáticos de GitHub Actions (Linter, Typecheck y Vitest).
-4. **TESTING $\rightarrow$ DONE:** Todos los checks del CI finalizan en verde y se aprueba el merge a la rama principal.
+4. **TESTING $\rightarrow$ DONE:** Todos los checks del CI finalizan en verde y se aprueba el merge a `develop` (los cambios llegan a `main` en cada release versionado).
 
 ---
 
@@ -34,16 +34,16 @@ El tablero de GitHub Projects se configura con 6 columnas estandarizadas de fluj
 
 | Milestone | Nombre del Hito | Entregables Clave |
 |-----------|-----------------|-------------------|
-| **M1** | Setup & Inicialización | Estructura de repositorio monorepo, TypeScript, ESLint, Wrangler y scripts base. |
-| **M2** | Arquitectura y Modelo D1 | Esquema relacional con Drizzle ORM, migraciones SQL de D1 y validadores Zod. |
-| **M3** | Autenticación y RBAC | Login, hashing seguro, emisión de JWT y verificación en KV con roles (`admin`, `organizer`, `client`). |
-| **M4** | Módulo Core (Clientes & Eventos) | CRUD de clientes, ciclo de vida del evento (`EventEntity`) y gestión de invitados con RSVP. |
-| **M5** | Motor Operativo y Financiero | Cálculo de presupuesto, conciliación de gastos, contratación de servicios y cronograma minuto a minuto. |
-| **M6** | Testing & Aseguramiento de Calidad | Suite completa de pruebas con Vitest (cobertura $\ge 85\%$ en dominio) y mocks de Miniflare. |
-| **M7** | Containerización con Docker | Dockerfiles multi-stage para backend y frontend, y archivo `docker-compose.yml` para ejecución local. |
-| **M8** | CI/CD & Docker Hub Automation | Workflow de GitHub Actions con jobs de test, compilación y push automatizado de imágenes a Docker Hub. |
-| **M9** | Despliegue en Cloudflare | Despliegue productivo de API en Cloudflare Workers y SPA en Cloudflare Pages con bindings a D1, R2 y KV. |
-| **M10** | Documentación Final y Entrega | Wiki en GitHub con diagramas Mermaid, README institucional y estructura de presentación en diapositivas. |
+| **M1** | Setup del Monorepo y Herramientas Base | Estructura de repositorio monorepo, TypeScript, ESLint, Wrangler, scripts base y job inicial de CI (lint, typecheck y tests) para proteger las ramas desde el primer PR. |
+| **M2** | Base de Datos D1 y Esquemas Drizzle | Esquema relacional con Drizzle ORM, migraciones SQL de D1 y validadores Zod. |
+| **M3** | Autenticación JWT y Roles RBAC | Login, hashing seguro, emisión de JWT y verificación en KV con roles (`admin`, `organizer`, `client`). |
+| **M4** | Módulo Core (Eventos, Clientes, Invitados y Mesas) | CRUD de clientes, ciclo de vida del evento (`EventEntity`), invitados con RSVP, alta de mesas con capacidad y perfil gastronómico. |
+| **M5** | Motor Financiero, Gastronómico y Operativo | Cálculo de presupuesto, conciliación de gastos, contratación de servicios, Reporte Oficial para Catering y cronograma minuto a minuto. |
+| **M6** | Pruebas Unitarias Automatizadas en Vitest | Suite completa de pruebas con Vitest (cobertura $\ge 85\%$ en dominio) y mocks de Miniflare. |
+| **M7** | Containerización con Docker Multi-stage | Dockerfiles multi-stage para backend y frontend, y archivo `docker-compose.yml` para ejecución local. |
+| **M8** | Pipeline CI/CD en GitHub Actions y Docker Hub | Ampliación del workflow con build multi-stage y push automatizado de imágenes a Docker Hub. |
+| **M9** | Despliegue en Producción a Cloudflare Workers y Pages | Despliegue productivo de API en Cloudflare Workers y SPA en Cloudflare Pages con bindings a D1, R2 y KV. |
+| **M10** | Documentación Final y Preparación de la Defensa | Documentación en `/docs` con diagramas Mermaid, README, release v1.0.0 y estructura de presentación en diapositivas. |
 
 ---
 
@@ -85,7 +85,7 @@ gantt
     section F1: Análisis
     Casos de Uso, D1 DDL y UML        :done, p1, 2026-10-04, 2026-10-10
     section F2: Base Proyecto
-    Monorepo, Drizzle, Wrangler (M1-M2) :active, p2, 2026-10-10, 2026-10-16
+    Monorepo, Drizzle, Wrangler (M1-M2) :p2, 2026-10-10, 2026-10-16
     section F3: Backend API
     Hono API, Auth JWT, Entidades (M3-M4) :p3, 2026-10-16, 2026-10-26
     section F4: Frontend SPA

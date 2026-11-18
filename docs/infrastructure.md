@@ -40,7 +40,7 @@ flowchart TD
     %% CAPA 2: PERÍMETRO Y SEGURIDAD CLOUDFLARE
     %% ========================================================
     subgraph Tier2["2. Perímetro de Red Global Cloudflare (Anycast Edge)"]
-        WAF["🛡️ Cloudflare Anycast DNS & WAF\nTerminación TLS 1.3 / Mitigación DDoS / Enrutamiento Global"]
+        WAF["🛡️ Cloudflare Anycast DNS & WAF\nTLS 1.3 / Mitigación DDoS / Rate Limiting\nEnrutamiento Global"]
     end
 
     %% ========================================================
@@ -57,7 +57,7 @@ flowchart TD
     subgraph Tier4["4. Capa de Persistencia y Almacenamiento (Edge Storage)"]
         D1[("🗄️ Cloudflare D1\nBase de Datos SQLite ACID\nTablas: Events, Guests, Expenses")]
         R2[("🪣 Cloudflare R2\nObject Storage (Compatible S3)\nPDFs Contratos y Comprobantes")]
-        KV[("⚡ Cloudflare KV\nAlmacén Clave-Valor en Memoria\nBlacklist JWT y Rate Limiting")]
+        KV[("⚡ Cloudflare KV\nAlmacén Clave-Valor Distribuido\nBlacklist de JWT Revocados")]
     end
 
     %% Flujos de Red y Bindings Nativos Descendentes (Sintaxis Simétrica Sin Cruces)
@@ -158,7 +158,7 @@ A continuación se detalla cada recurso en la nube que compone la infraestructur
 - **Tipo de Recurso:** Plataforma de alojamiento JAMstack / SPA estática.
 - **Propósito:** Hospeda y entrega los archivos HTML, CSS, JavaScript e imágenes compiladas de la aplicación frontend desarrollada en React.
 - **Relación con otros recursos:** Es consumido por el navegador del usuario final. Las acciones del usuario dentro de la interfaz disparan peticiones AJAX/Fetch hacia el Cloudflare Worker de la API.
-- **Aprovisionamiento:** Vinculado al repositorio de GitHub para despliegue continuo con la carpeta de salida `dist`.
+- **Aprovisionamiento:** Desplegado desde GitHub Actions con `wrangler pages deploy packages/frontend/dist`; sirve el dominio `planora.app` (excepto `/api/v1/*`, que atiende el Worker).
 
 ### Recurso 2: Cloudflare Worker (`planora-api`)
 - **Tipo de Recurso:** Cómputo serverless en el borde (*Edge Serverless Compute*).
@@ -180,23 +180,37 @@ A continuación se detalla cada recurso en la nube que compone la infraestructur
 
 ### Recurso 5: Cloudflare KV (`planora-kv-prod`)
 - **Tipo de Recurso:** Almacén clave-valor distribuido globalmente de baja latencia (*Key-Value Store*).
-- **Propósito:** 
-  1. Lista negra de tokens JWT revocados (*token revocation blacklist*) para invalidar sesiones al hacer logout.
-  2. Almacenamiento de contadores para control de tasa de peticiones (*rate limiting*) por dirección IP.
+- **Propósito:** Lista negra de tokens JWT revocados (*token revocation blacklist*) para invalidar sesiones al hacer logout. Cada `jti` se guarda con un TTL igual al tiempo restante del token. Es un patrón de escritura única y muchas lecturas, ideal para KV.
 - **Relación con otros recursos:** Vinculado al Worker mediante el binding `env.KV_CACHE`.
-- **Aprovisionamiento:** Creado vía `wrangler kv:namespace create planora-kv-prod`.
+- **Aprovisionamiento:** Creado vía `wrangler kv namespace create planora-kv-prod`.
+
+### Recurso 6: Regla de Rate Limiting del WAF (`planora-auth-ratelimit`)
+- **Tipo de Recurso:** Regla de limitación de tasa del WAF de Cloudflare (incluida en el plan Free: 1 regla, conteo por IP, ventana de 10 s).
+- **Propósito:** Proteger los endpoints de autenticación contra fuerza bruta y abuso.
+- **Configuración:**
+  - **Expresión:** `starts_with(http.request.uri.path, "/api/v1/auth/")`
+  - **Característica de conteo:** IP de origen.
+  - **Límite:** 10 peticiones por periodo de 10 segundos.
+  - **Acción:** *Block* durante 10 segundos.
+- **Por qué no en KV:** KV tiene consistencia eventual (los cambios pueden tardar hasta ~60 s en propagarse) y admite como máximo una escritura por segundo por llave, por lo que no es confiable para contadores de alta frecuencia.
+- **Aprovisionamiento:** Panel de Cloudflare → *Security* → *WAF* → *Rate limiting rules* sobre la zona `planora.app`.
 
 ---
 
-## 3. Configuración Declarativa de Infraestructura (`wrangler.toml`)
+## 4. Configuración Declarativa de Infraestructura (`packages/api/wrangler.toml`)
 
-El siguiente archivo define formalmente la infraestructura como código (IaC) para el Worker de backend:
+El siguiente archivo define formalmente la infraestructura como código (IaC) para el Worker de backend. Vive en `packages/api/`, por lo que las rutas son relativas a esa carpeta:
 
 ```toml
 name = "planora-api"
 main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
+
+# El Worker atiende únicamente las rutas de la API; el resto del dominio lo sirve Cloudflare Pages
+routes = [
+  { pattern = "planora.app/api/v1/*", zone_name = "planora.app" }
+]
 
 # Variables de entorno públicas
 [vars]
@@ -207,7 +221,8 @@ API_VERSION = "v1"
 [[d1_databases]]
 binding = "DB"
 database_name = "planora-d1-prod"
-database_id = "d1-uuid-planora-production-001"
+database_id = "d1-uuid-planora-production-001"   # valor real: salida de `wrangler d1 create`
+migrations_dir = "migrations"                     # carpeta donde drizzle-kit genera los .sql
 
 # 2. BINDING A STORAGE DE OBJETOS CLOUDFLARE R2
 [[r2_buckets]]
@@ -217,7 +232,7 @@ bucket_name = "planora-assets-prod"
 # 3. BINDING A CACHÉ CLOUDFLARE KV
 [[kv_namespaces]]
 binding = "KV_CACHE"
-id = "kv-uuid-planora-production-001"
+id = "kv-uuid-planora-production-001"   # valor real: salida de `wrangler kv namespace create`
 
 # Configuración de Observabilidad y Logs
 [observability]
