@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/cloudflare';
 import { createApp } from './app';
-import { InMemoryKV, InMemoryObjectStorage, type KVStore } from './infrastructure/ports';
+import { InMemoryKV, InMemoryObjectStorage, type KVStore, type RateLimiterPort } from './infrastructure/ports';
 import { D1DatabaseHealth, type D1Binding } from './infrastructure/db/d1';
 import { createSentryTelemetry } from './infrastructure/telemetry';
 import { PlanoraDataStore } from './infrastructure/store';
@@ -9,6 +9,7 @@ export interface WorkerEnv {
   JWT_SECRET?: string;
   DB?: D1Binding;
   KV_CACHE?: KVStore;
+  AUTH_RATE_LIMITER?: RateLimiterPort;
   ALLOWED_ORIGINS?: string;
   NODE_ENV?: string;
   ENVIRONMENT?: string;
@@ -52,6 +53,7 @@ export default Sentry.withSentry<WorkerEnv>(
         storage: fallbackStorage,
         telemetry,
         database: env.DB ? new D1DatabaseHealth(env.DB) : undefined,
+        authRateLimiter: env.AUTH_RATE_LIMITER,
         environment,
         jwtSecret: env.JWT_SECRET,
         allowedOrigins,
