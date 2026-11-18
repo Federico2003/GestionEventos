@@ -77,7 +77,8 @@ flowchart TD
             DashboardView["Dashboard & KPIs View"]
             EventsView["Event Lifecycle & Detail View"]
             BudgetView["Budget & Expense Reconciliation View"]
-            GuestsView["Guest List & RSVP Table View"]
+            ClientsView["Clients & Host Portal View"]
+            GuestsView["Guest List, Tables & Catering View"]
             VendorsView["Vendors & Services Catalog View"]
             TasksAgendaView["Tasks Kanban & Agenda Timeline View"]
         end
@@ -100,7 +101,7 @@ flowchart TD
     %% ========================================================
     subgraph Layer3["3. CAPA CLOUDFLARE EDGE (PERÍMETRO GLOBAL ANYCAST)"]
         EdgeDNS["Cloudflare Anycast DNS\n(Resolución global < 10ms)"]
-        EdgeSecurity["Cloudflare WAF & DDoS Shield\n(Terminación TLS 1.3 / HTTP/2 & HTTP/3)"]
+        EdgeSecurity["Cloudflare WAF & DDoS Shield\n(TLS 1.3 / HTTP/3 / Rate Limiting Rule)"]
         EdgeRouter{"Cloudflare Edge Dispatcher\n(Enrutador de Rutas)"}
         
         PagesHost["Cloudflare Pages Host\n(Entrega de Bundles Estáticos SPA)"]
@@ -119,7 +120,6 @@ flowchart TD
 
         subgraph MiddlewarePipeline["Pipeline de Middlewares"]
             CorsMw["CORS & Security Headers Middleware"]
-            RateLimitMw["Rate Limiter Middleware\n(Protección contra fuerza bruta)"]
             AuthMw["JWT Verification Middleware\n(Web Crypto API)"]
             RbacMw["Role-Based Access Control Guard\n(admin, organizer, client)"]
             ZodMw["Zod Input Validation Middleware\n(Request Body / Params DTOs)"]
@@ -128,9 +128,10 @@ flowchart TD
 
         subgraph Controllers["Controladores REST (Adapters Primarios)"]
             AuthController["AuthController\n(/api/v1/auth)"]
+            ClientController["ClientController\n(/api/v1/clients)"]
             EventController["EventController\n(/api/v1/events)"]
-            BudgetController["BudgetController\n(/api/v1/budget, /expenses)"]
-            GuestController["GuestController\n(/api/v1/guests)"]
+            BudgetController["BudgetController\n(/api/v1/events/:id/budget, /expenses)"]
+            GuestController["GuestController\n(/api/v1/events/:id/guests, /tables, /catering-report)"]
             VendorController["VendorController\n(/api/v1/vendors, /services)"]
             TaskController["TaskController\n(/api/v1/tasks)"]
             AgendaController["AgendaController\n(/api/v1/agenda)"]
@@ -138,7 +139,7 @@ flowchart TD
         end
 
         WorkersRuntime --> HonoRouter
-        HonoRouter --> CorsMw --> RateLimitMw --> AuthMw --> RbacMw --> ZodMw --> ErrorMw
+        HonoRouter --> CorsMw --> AuthMw --> RbacMw --> ZodMw --> ErrorMw
         ZodMw --> Controllers
     end
 
@@ -148,9 +149,11 @@ flowchart TD
     subgraph Layer5["5. CAPA DE SERVICIOS Y DOMINIO (LÓGICA DE NEGOCIO)"]
         subgraph ApplicationServices["Servicios de Aplicación (Casos de Uso)"]
             AuthService["Auth & Session Service\n(Login, Token Sign, Logout)"]
+            ClientService["Client Service\n(CRUD, LinkUserAccount, HistorySummary)"]
             EventService["Event Lifecycle Service\n(ConfirmEvent, CancelEvent, Clone)"]
             BudgetService["Budget Engine Service\n(CalculateStatus, OverrunAlert, Reconcile)"]
-            GuestService["Guest & RSVP Service\n(RegisterRsvp, AssignTableCapacity)"]
+            GuestService["Guest & RSVP Service\n(RegisterRsvp, AssignTable, DietaryProfile)"]
+            CateringService["Catering Report Service\n(GenerateCateringReport)"]
             VendorService["Vendor & Contract Service\n(ContractService, SignDocument)"]
             TaskService["Task Operation Service\n(CompleteTask, CalculateProgress)"]
             AgendaService["Timeline Schedule Service\n(ReorderTimeline, DetectConflicts)"]
@@ -158,16 +161,17 @@ flowchart TD
         end
 
         subgraph DomainCore["Núcleo del Dominio (Pure Domain Core)"]
-            Entities["Entidades de Negocio:\nEvent, Guest, Expense, Vendor, Task, AgendaItem"]
-            ValueObjects["Value Objects Inmutables:\nBudgetSummaryVO, RsvpStatusVO, TimeIntervalVO"]
+            Entities["Entidades de Negocio:\nUser, Client, Event, Guest, EventTable,\nVendor, Service, EventService, Expense, Task, AgendaItem"]
+            ValueObjects["Value Objects Inmutables:\nBudgetSummaryVO, CateringReportVO, TimeIntervalVO"]
             DomainRules["Reglas de Invarianza:\nValidación de Fechas, Aforo Máximo de Mesas, Límite de Gasto"]
         end
 
         subgraph Ports["Puertos del Dominio (Interfaces Abstraídas)"]
+            IRepoUsers["IUserRepository / IClientRepository"]
             IRepoEvents["IEventRepository"]
             IRepoBudget["IExpenseRepository"]
-            IRepoGuests["IGuestRepository"]
-            IRepoVendors["IVendorRepository"]
+            IRepoGuests["IGuestRepository / IEventTableRepository"]
+            IRepoVendors["IVendorRepository / IContractRepository"]
             IRepoTasks["ITaskRepository"]
             IRepoAgenda["IAgendaRepository"]
             IFileStorage["IFileStoragePort"]
@@ -186,7 +190,7 @@ flowchart TD
         subgraph InfrastructureAdapters["Adaptadores Secundarios (Infraestructura)"]
             DrizzleAdapter["Drizzle ORM Adapter\n(Implementa IRepositories mediante SQL Tipado)"]
             R2StorageAdapter["Cloudflare R2 Adapter\n(Implementa IFileStoragePort para PDFs y Comprobantes)"]
-            KVStorageAdapter["Cloudflare KV Adapter\n(Implementa ICacheSessionPort para Blacklist y RateLimit)"]
+            KVStorageAdapter["Cloudflare KV Adapter\n(Implementa ICacheSessionPort para Blacklist de JWT)"]
         end
 
         subgraph CloudflareResources["Recursos Persistentes de Cloudflare"]
@@ -195,7 +199,7 @@ flowchart TD
             KVEngine[("Cloudflare KV Store\nAlmacén Clave-Valor Distribuido en Memoria\nBinding: env.KV_CACHE")]
         end
 
-        IRepoEvents & IRepoBudget & IRepoGuests & IRepoVendors & IRepoTasks & IRepoAgenda --> DrizzleAdapter
+        IRepoUsers & IRepoEvents & IRepoBudget & IRepoGuests & IRepoVendors & IRepoTasks & IRepoAgenda --> DrizzleAdapter
         IFileStorage --> R2StorageAdapter
         ICachePort --> KVStorageAdapter
 
@@ -219,14 +223,14 @@ flowchart TD
 ### 3.1 Capa 1: Usuario y Actores
 Representa a los consumidores directos de la solución. Cada actor cuenta con un contexto delimitado (*Bounded Context*) dentro del sistema:
 - **Organizador:** Ejecuta casos de uso administrativos, financieros, contractuales y logísticos completos.
-- **Cliente:** Consume vistas restringidas de su evento específico, interactúa con la confirmación de invitados y consulta el cronograma en tiempo real.
+- **Cliente:** Consume vistas de solo lectura de su evento (avance, resumen de presupuesto y cronograma) y puede confirmar o actualizar su lista de invitados. No modifica gastos, contratos ni proveedores.
 - **Administrador:** Acceso a métricas de auditoría global del sistema y supervisión técnica.
 
 ---
 
 ### 3.2 Capa 2: Frontend (Client-Side Presentation Layer)
 Construida como una Single Page Application (SPA) sobre React 18 y TypeScript, optimizada para ejecutarse en el navegador del usuario:
-1. **Componentes Visuales (UI Views):** Interfaces modulares construidas con Tailwind CSS que representan los módulos del negocio (Dashboard, Eventos, Finanzas, Invitados, Tareas, Cronograma).
+1. **Componentes Visuales (UI Views):** Interfaces modulares construidas con Tailwind CSS que representan los módulos del negocio (Dashboard, Clientes, Eventos, Finanzas, Invitados y Mesas con Reporte de Catering, Proveedores, Tareas y Cronograma).
 2. **React Router v6:** Controla la navegación en el cliente, evaluando guardias de autenticación (*AuthGuards*) y permisos según el rol almacenado en el token.
 3. **TanStack Query (React Query):** Administra el estado asíncrono del servidor en el cliente. Proporciona caché en memoria, deduplicación de peticiones, reintentos automáticos y actualización optimista de datos en pantalla.
 4. **Zustand Store:** Almacén de estado global ligero para datos de sesión efímeros (usuario activo, token JWT, preferencias visuales).
@@ -238,6 +242,7 @@ Construida como una Single Page Application (SPA) sobre React 18 y TypeScript, o
 La infraestructura distribuida de Cloudflare actúa como la primera línea de procesamiento y enrutamiento en el borde:
 1. **Anycast DNS:** Resuelve la dirección IP del usuario hacia el centro de datos de Cloudflare más cercano físicamente (<10 ms).
 2. **WAF & DDoS Shield:** Filtra tráfico malicioso, mitiga ataques distribuidos de denegación de servicio e implementa terminación TLS 1.3 con certificados automáticos.
+   - **Regla de Rate Limiting:** bloquea durante 10 s a la IP que haga más de 10 peticiones en 10 s hacia `/api/v1/auth/*`, frenando ataques de fuerza bruta contra el login antes de que lleguen al Worker. Se usa la regla nativa del WAF (incluida en el plan Free) porque cuenta las peticiones de forma confiable en la red de Cloudflare; KV no es adecuado para contadores por su consistencia eventual.
 3. **Cloudflare Edge Dispatcher:**
    - Si la ruta solicitada corresponde a la aplicación web (`/`, `/assets/*`, `/favicon.ico`), sirve los archivos precompilados en caché global desde **Cloudflare Pages**.
    - Si la ruta comienza con `/api/v1/*`, despacha la solicitud directamente hacia el runtime de **Cloudflare Workers**.
@@ -248,7 +253,6 @@ La infraestructura distribuida de Cloudflare actúa como la primera línea de pr
 El backend corre en Cloudflare Workers utilizando el microframework **Hono** para ofrecer enrutamiento ultrarrápido y seguro:
 1. **Pipeline de Middlewares:**
    - `CorsMiddleware`: Restringe orígenes cruzados permitidos y cabeceras seguras.
-   - `RateLimiterMiddleware`: Consulta Cloudflare KV para limitar solicitudes sospechosas por IP.
    - `AuthMiddleware`: Extrae el token JWT, valida su firma criptográfica con Web Crypto API y consulta Cloudflare KV para garantizar que no esté revocado.
    - `RbacGuard`: Valida que el rol del usuario coincida con la política requerida por el endpoint (`admin`, `organizer`, `client`).
    - `ZodValidationMiddleware`: Parsea y sanitiza la carga útil entrante (*body*, *query params*); si los datos no cumplen el contrato DTO, rechaza la solicitud de inmediato con HTTP 400 antes de tocar la lógica de negocio.
@@ -265,7 +269,8 @@ Esta capa es el corazón intelectual de **Planora**. Es código TypeScript puro,
 2. **Entidades del Dominio y Value Objects:**
    - Modela las reglas fundamentales de la empresa:
      - `Event`: controla el ciclo de vida y la coherencia de estados.
-     - `Guest`: aplica reglas de restricción de aforo de mesas.
+     - `Guest` y `EventTable`: aplican las reglas de aforo de mesas y el perfil gastronómico (menú y alergias críticas).
+     - `CateringReportVO`: consolidado inmutable de platillos por menú, platillos por mesa y alertas de alergias críticas.
      - `BudgetSummaryVO`: objeto de valor inmutable que encapsula `initialBudget`, `totalSpent`, `remainingBalance` y `statusAlert`.
 3. **Puertos del Dominio (Ports):**
    - Interfaces TypeScript (`IEventRepository`, `IExpenseRepository`, `IFileStoragePort`, `ICacheSessionPort`) que declaran qué operaciones necesita el dominio sin saber cómo están implementadas técnicamente.
@@ -330,46 +335,63 @@ sequenceDiagram
     ReactUI-->>Organizer: 21. Muestra en pantalla el nuevo saldo y semáforo amarillo
 ```
 
-## 5. Diagramas de Arquitectura
+## 5. Homologación con Microsoft Azure
+
+La solución se ejecuta de forma nativa en Cloudflare. Para leerla con una notación estándar de la industria, cada componente se relaciona con su servicio equivalente en la biblioteca oficial de [íconos de arquitectura de Azure](https://learn.microsoft.com/es-es/azure/architecture/icons/):
+
+| Componente Lógico | Recurso en Cloudflare (ejecución real) | Equivalente / Ícono Azure | Función |
+|---|---|---|---|
+| Usuarios / Actores | Navegadores web y móviles | General / Users | Organizadores, clientes y administradores. |
+| Frontend SPA | Cloudflare Pages | Azure Static Web Apps | Aloja y distribuye el bundle de React + Vite. |
+| DNS y enrutamiento global | Cloudflare Anycast DNS | Azure DNS | Resolución hacia el nodo de borde más cercano. |
+| Seguridad perimetral | Cloudflare WAF, DDoS y regla de Rate Limiting | Azure Front Door + Azure Web Application Firewall | Filtrado de ataques, mitigación DDoS, rate limiting, TLS 1.3 y enrutamiento `/` vs `/api/v1/*`. |
+| API Gateway | Hono Router (en Workers) | Azure API Management | Rutas `/api/v1/*`, CORS, autenticación y validación Zod. |
+| Cómputo serverless | Cloudflare Workers | Azure Functions | Ejecuta controladores y servicios de dominio. |
+| Base de datos relacional | Cloudflare D1 (SQLite) | Azure SQL Database Serverless | Datos transaccionales ACID. |
+| Almacenamiento de objetos | Cloudflare R2 | Azure Blob Storage | Contratos PDF y comprobantes de pago. |
+| Caché clave-valor | Cloudflare KV | Azure Cache for Redis | Revocación de JWT (logout). |
+
+### 5.1 Diagrama de Arquitectura con Notación Azure
+
+El siguiente diagrama representa la misma arquitectura con la nomenclatura de Azure; entre corchetes se indica el recurso de Cloudflare que realmente lo ejecuta.
+
 ```mermaid
 flowchart TD
-    subgraph UsersTier["Capa de Clientes (AWS General / Users)"]
-        UserIcon["👤 Users / Mobile & Web Clients\n(Organizador / Cliente)"]
+    subgraph AzUsers["Capa de Usuarios (Azure General / Users)"]
+        AzUser["👤 Users\n(Organizador / Cliente / Administrador)"]
     end
 
-    subgraph EdgePerimeter["Capa de Red y Seguridad Perimetral (AWS Networking & Security)"]
-        Route53["🌐 Amazon Route 53 (DNS)\n[Equiv: Cloudflare DNS]"]
-        WAF["🛡️ AWS WAF & AWS Shield\n[Equiv: Cloudflare WAF / DDoS Shield]"]
-        AmplifyFrontend["💻 AWS Amplify / S3 Static Web\n[Equiv: Cloudflare Pages (React SPA)]"]
+    subgraph AzPerimeter["Capa Perimetral (Azure Networking & Security)"]
+        AzDNS["🌐 Azure DNS\n[Cloudflare Anycast DNS]"]
+        AzFrontDoor["🛡️ Azure Front Door + WAF\n[Cloudflare WAF / DDoS / Rate Limiting]"]
+        AzStatic["💻 Azure Static Web Apps\n[Cloudflare Pages (React SPA)]"]
     end
 
-    subgraph ServerlessCompute["Capa de Cómputo Serverless (AWS Compute & Integration)"]
-        APIGateway["🚪 Amazon API Gateway\n[Equiv: Hono Framework Router]"]
-        LambdaCompute["⚡ AWS Lambda (Serverless Compute)\n[Equiv: Cloudflare Workers Runtime]"]
-        
-        subgraph CleanArchInside["Clean Architecture / Dominio"]
-            DomainLogic["Lógica de Negocio y Casos de Uso:\nEventEngine, BudgetReconciliation, GuestRSVP"]
+    subgraph AzCompute["Capa de Cómputo (Azure Compute & Integration)"]
+        AzAPIM["🚪 Azure API Management\n[Hono Router]"]
+        AzFunc["⚡ Azure Functions\n[Cloudflare Workers]"]
+        subgraph AzDomain["Clean Architecture / Dominio"]
+            AzLogic["Servicios de Dominio:\nEventos, Invitados y Mesas, Catering,\nPresupuesto, Tareas y Agenda"]
         end
     end
 
-    subgraph StorageTier["Capa de Datos y Persistencia (AWS Database & Storage)"]
-        AuroraDB[("🗄️ Amazon Aurora Serverless / RDS\n[Equiv: Cloudflare D1 (SQLite)]")]
-        S3Storage[("🪣 Amazon S3 (Object Storage)\n[Equiv: Cloudflare R2 (Contratos PDF)]")]
-        ElastiCacheKV[("⚡ Amazon ElastiCache / DynamoDB\n[Equiv: Cloudflare KV (Token Blacklist)]")]
+    subgraph AzData["Capa de Datos (Azure Databases & Storage)"]
+        AzSQL[("🗄️ Azure SQL Database Serverless\n[Cloudflare D1]")]
+        AzBlob[("🪣 Azure Blob Storage\n[Cloudflare R2]")]
+        AzRedis[("⚡ Azure Cache for Redis\n[Cloudflare KV]")]
     end
 
-    %% Conexiones
-    UserIcon -->|"1. HTTPS Request"| Route53
-    Route53 --> WAF
-    WAF -->|"Carga de UI Estática"| AmplifyFrontend
-    UserIcon -->|"2. Consumo API (/api/v1/*)"| APIGateway
-    APIGateway --> LambdaCompute
-    LambdaCompute --> DomainLogic
-    
-    DomainLogic -->|"Consultas SQL Transaccionales"| AuroraDB
-    DomainLogic -->|"Subir / Descargar PDFs"| S3Storage
-    DomainLogic -->|"Validar Tokens Revocados"| ElastiCacheKV
+    AzUser -->|"HTTPS"| AzDNS
+    AzDNS --> AzFrontDoor
+    AzFrontDoor -->|"Ruta: / (assets)"| AzStatic
+    AzFrontDoor -->|"Ruta: /api/v1/*"| AzAPIM
+    AzAPIM --> AzFunc
+    AzFunc --> AzLogic
+    AzLogic -->|"Transacciones SQL"| AzSQL
+    AzLogic -->|"Contratos y comprobantes"| AzBlob
+    AzLogic -->|"Tokens revocados"| AzRedis
 ```
+
 ## 6. Justificación de Decisiones de Arquitectura Lógica
 
 1. **¿Por qué Puertos y Adaptadores (Clean Architecture) en un Edge Monolith?**  

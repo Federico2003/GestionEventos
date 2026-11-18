@@ -1,4 +1,4 @@
-# Planora — Propuesta de Proyecto de Grado / Proyecto Final
+# Planora — Propuesta de Proyecto Final
 
 **Asignatura:** Infraestructura para el Desarrollo Continuo (9º Semestre)  
 **Proyecto:** Plataforma Web para la Gestión Profesional de Eventos  
@@ -106,7 +106,7 @@ El MVP se concentra en resolver la centralización del evento y los puntos de do
 - Autenticación segura y control de acceso por roles (`admin`, `organizer`, `client`).
 - Ciclo de vida y gestión integral de eventos (`draft` $\rightarrow$ `confirmed` $\rightarrow$ `completed`).
 - **Gestión Avanzada de Invitados y Mesas:** Control riguroso de asistencia (RSVP), acompañantes (+1s), aforo y asignación de mesas físicas.
-- **Asignación Gastronómica y Alertas de Alergias:** Registro del tipo de menú asignado por persona (regular, vegetariano, vegano, infantil, celíaco) y catálogo de alergias severas con emisión del **Reporte Oficial para Catering**.
+- **Asignación Gastronómica y Alertas de Alergias:** Registro del tipo de menú asignado por persona (regular, vegetariano, vegano, infantil, kosher u otro) y catálogo de alergias severas con emisión del **Reporte Oficial para Catering**.
 - **Control Presupuestario y Conciliación:** Presupuesto inicial, gastos registrados, alertas preventivas de semáforo (Verde, Amarillo, Rojo) y carga de comprobantes en Cloudflare R2.
 - **Gestión Básica de Bebidas y Transporte:** Se cubren dentro del flujo natural del evento como servicios contratados a proveedores (`event_services`), partidas de gastos y bloques de itinerario en la agenda.
 - **Directorio de Proveedores y Servicios Contratados** con archivo de contratos PDF en Cloudflare R2.
@@ -161,16 +161,17 @@ El sistema está estructurado en 10 componentes modulares. Cada componente cuent
 
 ### 4. Componente de Invitados y Gastronomía (`GuestComponent`)
 - **Propósito:** Administración de asistentes, confirmaciones (RSVP), aforo de mesas, asignación de menús y control crítico de alergias.
-- **Datos Principales:** `id`, `event_id`, `first_name`, `last_name`, `email`, `phone`, `table_number`, `rsvp_status`, `plus_ones`, `meal_preference`, `allergies`, `dietary_restrictions`.
-- **Relaciones:** N:1 con Evento.
+- **Datos Principales:** `id`, `event_id`, `first_name`, `last_name`, `email`, `phone`, `table_number`, `rsvp_status`, `plus_ones`, `meal_preference`, `allergies`, `has_critical_allergies`, `dietary_restrictions`.
+- **Mesas (`event_tables`):** `id`, `event_id`, `table_number`, `label`, `capacity` — cada mesa del salón se registra con su capacidad máxima.
+- **Relaciones:** N:1 con Evento; N:1 opcional con Mesa del mismo evento.
 - **CRUD:** `addGuest()`, `getGuestById()`, `listGuestsByEvent()`, `updateGuest()`, `removeGuest()`.
 - **Métodos de Negocio:**
   - `registerRsvp(guestId, status, confirmedPlusOnes)`: Actualiza la asistencia (`confirmed`, `declined`, `pending`) y valida que los acompañantes no superen el límite permitido.
-  - `assignTable(guestId, tableNumber, maxCapacityPerTable)`: Valida algorítmicamente la capacidad física de la mesa antes de asignar al invitado y a sus acompañantes para evitar sobrecupo.
-  - `registerDietaryProfile(guestId, mealPreference, allergies, restrictions)`: Asigna el menú específico (estándar, vegetariano, vegano, infantil, celíaco) y cataloga alergias alimentarias.
-  - `generateCateringDietaryReport(eventId)`: Genera un consolidado estructurado para el banquetero/chef que desglosa: (a) raciones totales por tipo de menú, (b) distribución de platillos por mesa, y (c) alertas rojas de alergias severas geolocalizadas por número de asiento y mesa para prevenir contaminación cruzada.
+  - `assignTable(guestId, tableNumber)`: Valida algorítmicamente, contra la `capacity` registrada de la mesa, que el invitado y sus acompañantes quepan antes de asignarlos; si no, lanza `TableCapacityExceededError`.
+  - `registerDietaryProfile(guestId, mealPreference, allergies, isCritical, restrictions)`: Asigna el menú específico (estándar, vegetariano, vegano, infantil, kosher u otro) y registra alergias o restricciones (p. ej. celiaquía/gluten); si es de riesgo médico, activa `has_critical_allergies`.
+  - `generateCateringDietaryReport(eventId)`: Genera un consolidado estructurado para el banquetero/chef que desglosa: (a) raciones totales por tipo de menú, (b) distribución de platillos por mesa, y (c) alertas rojas de alergias severas ubicadas por mesa para prevenir contaminación cruzada.
   - `calculateRsvpMetrics(eventId)`: Retorna total de invitados invitados, confirmados, declinados, porcentaje de confirmación y total de raciones requeridas.
-- **Reglas y Validaciones:** `plus_ones` debe ser entero $\ge 0$; `meal_preference` debe pertenecer a una enumeración válida; si `allergies` no está vacío, el comensal se marca con una bandera de atención especial en el reporte.
+- **Reglas y Validaciones:** `plus_ones` debe ser entero $\ge 0$; `meal_preference` debe pertenecer a una enumeración válida; los invitados con `has_critical_allergies = 1` aparecen en la sección de alertas rojas del reporte; solo se cuentan invitados con RSVP `confirmed`.
 
 ### 5. Componente de Proveedores (`VendorComponent`)
 - **Propósito:** Directorio y evaluación de empresas externas prestadoras de servicios para eventos.

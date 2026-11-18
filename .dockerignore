@@ -1,0 +1,21 @@
+# Dependencias y artefactos locales (se instalan/compilan dentro de la imagen)
+**/node_modules
+**/dist
+coverage
+reports
+.wrangler
+.mf
+
+# Control de versiones, CI y documentación
+.git
+.github
+docs
+Presentaciones
+*.md
+*.docx
+*.pdf
+
+# Secretos locales
+.env
+.env.*
+!.env.example

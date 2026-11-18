@@ -34,39 +34,39 @@ gitGraph
     checkout develop
     commit id: "Setup Project"
     
-    branch feature/10-event-engine
-    checkout feature/10-event-engine
+    branch feature/06-event-lifecycle
+    checkout feature/06-event-lifecycle
     commit id: "feat(events): add event model"
     commit id: "feat(events): add lifecycle rules"
     checkout develop
-    merge feature/10-event-engine id: "PR #1: Merge Feature"
+    merge feature/06-event-lifecycle id: "PR: Merge Events (#06)"
     
-    branch feature/12-budget-calc
-    checkout feature/12-budget-calc
+    branch feature/10-budget-engine
+    checkout feature/10-budget-engine
     commit id: "feat(budget): add reconciliation logic"
     commit id: "test(budget): add unit tests"
     checkout develop
-    merge feature/12-budget-calc id: "PR #2: Merge Budget"
+    merge feature/10-budget-engine id: "PR: Merge Budget (#10)"
     
     checkout main
     merge develop id: "Release v1.0.0 (Cloudflare Deploy)"
     
-    branch hotfix/fix-token-exp
-    checkout hotfix/fix-token-exp
+    branch hotfix/03-token-expiration
+    checkout hotfix/03-token-expiration
     commit id: "fix(auth): adjust token expiration"
     checkout main
-    merge hotfix/fix-token-exp id: "Hotfix v1.0.1"
+    merge hotfix/03-token-expiration id: "Hotfix v1.0.1"
     checkout develop
-    merge hotfix/fix-token-exp id: "Sync hotfix"
+    merge hotfix/03-token-expiration id: "Sync hotfix"
 ```
 
 ### 2.1 Definición de Ramas
 
 | Nombre de Rama | Propósito | Rama Origen | Rama Destino de Merge | Despliegue Automatizado |
 |----------------|-----------|-------------|-----------------------|-------------------------|
-| `main` | **Producción Estable.** Código auditado y validado que se ejecuta en vivo para usuarios finales. | Ninguna (inicial) | Ninguna | Despliegue a Producción en Cloudflare + Publicación en Docker Hub con tag `latest`. |
-| `develop` | **Integración y Staging.** Punto de convergencia donde se integran todas las características listas para validación conjunta. | `main` | `main` | Ejecuta tests de integración y pre-build. |
-| `feature/<id>-<slug>` | **Nuevas Características.** Desarrollo de una funcionalidad específica ligada a un Issue del Project Board. | `develop` | `develop` (vía PR) | Ejecuta pruebas unitarias y verificación de tipos (CI). |
+| `main` | **Producción Estable.** Código auditado y validado que se ejecuta en vivo para usuarios finales. | Ninguna (inicial) | Ninguna | Build y Pruebas (UAT) → Docker Hub (`latest`) → Ambiente Dev → ⏸ aprobación manual (Environment `production`) → Ambiente Prod. |
+| `develop` | **Integración.** Punto de convergencia donde se integran todas las características listas para validación conjunta. | `main` | `main` | Build y Pruebas (UAT) → Docker Hub (`dev`) → despliegue automático al **Ambiente Dev**. |
+| `feature/<id>-<slug>` | **Nuevas Características.** Desarrollo de una funcionalidad específica ligada a un Issue del Project Board. | `develop` | `develop` (vía PR) | En el PR: Build, lint y pruebas unitarias con reporte UAT (sin despliegue). |
 | `fix/<id>-<slug>` | **Corrección de Defectos.** Solución de bugs detectados durante pruebas en la rama `develop`. | `develop` | `develop` (vía PR) | Ejecuta pruebas unitarias y regresión (CI). |
 | `hotfix/<id>-<slug>` | **Parche Crítico de Producción.** Correcciones urgentes de incidentes en vivo sobre `main`. | `main` | `main` y sincronizado a `develop` | Despliegue inmediato a Producción con parche de versión SemVer. |
 
@@ -81,12 +81,12 @@ feature/ISSUE_ID-descripcion-corta
 fix/ISSUE_ID-descripcion-corta
 hotfix/ISSUE_ID-descripcion-corta
 
-# Ejemplos reales:
-feature/04-auth-jwt-cloudflare-kv
-feature/07-event-crud-operations
-feature/11-budget-calculation-engine
-fix/22-rsvp-counter-boundary-check
-hotfix/29-cors-header-patch
+# Ejemplos (números según el backlog de 23 issues):
+feature/04-token-revocation-kv
+feature/06-event-lifecycle
+feature/10-budget-calculation-engine
+fix/07-rsvp-plus-ones-boundary
+hotfix/03-cors-header-patch
 ```
 
 ### 3.2 Convención de Mensajes de Commit (Conventional Commits)
@@ -107,15 +107,16 @@ Se adopta el estándar de [Conventional Commits v1.0.0](https://www.conventional
 - `docs:` Modificaciones en documentación Markdown o diagramas.
 - `ci:` Cambios en pipelines de GitHub Actions o scripts de Docker.
 - `refactor:` Modificación de código que no altera el comportamiento funcional ni corrige bugs.
+- `style:` Cambios de formato (espacios, comas, Prettier) sin impacto en la lógica.
 - `chore:` Tareas rutinarias de configuración, dependencias o herramientas.
 
 #### Ejemplos Válidos:
 ```text
-feat(budget): implementar metodo calculateBudgetStatus con alertas de color #11
-test(events): agregar casos de prueba para confirmacion con fecha retroactiva #08
-fix(guests): validar que plusOnes no exceda aforo de mesa #22
-ci(docker): agregar configuracion multi-stage para reduccion de imagen #15
-docs(architecture): actualizar diagrama de infraestructura Cloudflare en Mermaid #02
+feat(budget): implementar metodo calculateBudgetStatus con alertas de color #10
+test(events): agregar casos de prueba para confirmacion con fecha retroactiva #06
+fix(guests): validar que plusOnes no exceda aforo de mesa #07
+ci(docker): agregar configuracion multi-stage para reduccion de imagen #17
+docs(architecture): actualizar diagrama de infraestructura Cloudflare en Mermaid #22
 ```
 
 ---
@@ -126,10 +127,7 @@ docs(architecture): actualizar diagrama de infraestructura Cloudflare en Mermaid
    - Se prohíbe el `git push --force` directo sobre `main` y `develop`.
    - Toda integración a `develop` o `main` debe originarse obligatoriamente mediante un **Pull Request**.
 2. **Requisitos de Integración Continua (Branch Protection Rules):**
-   - El pipeline de GitHub Actions debe reportar `passed` en:
-     - Verificación estática de tipos (`npm run typecheck`).
-     - Análisis de linter (`npm run lint`).
-     - Suite completa de pruebas unitarias con Vitest (`npm run test`).
+   - Los pipelines `backend.yml` y `frontend.yml` deben reportar `passed` en los jobs **BackEnd - Build y Pruebas (UAT)** y **Frontend - Build y Pruebas** (build, lint, pruebas unitarias con reporte JUnit y cobertura ≥ 85% en dominio) antes de permitir el merge.
 3. **Estrategia de Merge:**
-   - Para integrar `feature/*` a `develop`: Se utiliza **Squash and Merge** para mantener una línea de tiempo lineal y limpia en la rama de integración.
+   - Para integrar `feature/*` a `develop`: Se utiliza **Create a merge commit**. Cada rama contiene un commit atómico ligado a su issue (Conventional Commits), por lo que el historial de `develop` conserva la trazabilidad commit → issue, y las ramas encadenadas se integran en orden sin reescribir historia.
    - Para integrar `develop` a `main`: Se utiliza **Merge Commit** explícito con tag de versión (e.g., `v1.0.0`), documentando la entrega formal (*release*).

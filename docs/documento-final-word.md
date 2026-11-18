@@ -2,7 +2,7 @@
 
 **Documento:** Propuesta de Arquitectura y Especificación Técnica del Sistema (RFC & Design Spec)  
 **Versión:** 1.0.0  
-**Estado:** Aprobado para Implementación  
+**Estado:** Propuesta en revisión (fase de diseño)  
 **Sistema:** **PLANORA — Event Management & Financial Control Platform**  
 
 ---
@@ -89,7 +89,7 @@ El sistema está compuesto por 10 módulos altamente cohesivos y desacoplados:
 
 ### 1. Componente de Usuarios (`UserComponent`)
 - **Propósito:** Autenticación de identidad, seguridad y autorización basada en roles (RBAC).
-- **Datos Principales:** `id`, `name`, `email`, `password_hash`, `role` (`admin`, `organizer`, `client`), `phone`, `timestamps`.
+- **Datos Principales:** `id`, `name`, `email`, `password_hash`, `role` (`admin`, `organizer`, `client`), `phone`, `is_active`, `timestamps`.
 - **Operaciones CRUD:** `createUser()`, `getUserById()`, `updateUser()`, `deleteUser()`.
 - **Métodos de Negocio:**
   - `authenticate(email, password)`: Valida credenciales, comprueba estado activo y genera token JWT firmado mediante Web Crypto API.
@@ -110,24 +110,25 @@ El sistema está compuesto por 10 módulos altamente cohesivos y desacoplados:
 - **Operaciones CRUD:** `createEvent()`, `getEventById()`, `listEvents()`, `updateEvent()`, `deleteEvent()`.
 - **Métodos de Negocio:**
   - `confirmEvent(eventId)`: Valida que la fecha sea futura, el presupuesto sea $\ge 0$ y exista un cliente titular antes de transicionar a `confirmed`.
-  - `cancelEvent(eventId, reason)`: Desactiva en cascada tareas pendientes y congela la agenda.
+  - `cancelEvent(eventId, reason)`: Pasa a `cancelled` las tareas no completadas y las contrataciones pendientes, y congela la agenda.
   - `calculateEventProgress(eventId)`: Computa el porcentaje ponderado de avance ($0\% - 100\%$) basado en tareas completadas.
   - `cloneEventStructure(sourceEventId, newTitle, newDate)`: Clona tareas base y cronograma para reutilizarlos como plantilla.
 
 ### 4. Componente de Invitados y Gastronomía (`GuestComponent`)
 - **Propósito:** Control de asistentes, confirmaciones (RSVP), mesas, menús y alergias.
-- **Datos Principales:** `id`, `event_id`, `first_name`, `last_name`, `email`, `phone`, `table_number`, `rsvp_status` (`pending`, `confirmed`, `declined`), `plus_ones`, `meal_preference` (`standard`, `vegetarian`, `vegan`, `child`, `kosher`, `other`), `allergies`, `dietary_restrictions`.
+- **Datos Principales:** `id`, `event_id`, `first_name`, `last_name`, `email`, `phone`, `table_number`, `rsvp_status` (`pending`, `confirmed`, `declined`), `plus_ones`, `meal_preference` (`standard`, `vegetarian`, `vegan`, `child`, `kosher`, `other`), `allergies`, `has_critical_allergies`, `dietary_restrictions`.
+- **Mesas del Evento (`event_tables`):** `id`, `event_id`, `table_number`, `label`, `capacity`. Cada mesa se da de alta con su capacidad máxima de sillas, que es la que valida `assignTable`.
 - **Operaciones CRUD:** `addGuest()`, `getGuestById()`, `listGuestsByEvent()`, `updateGuest()`, `removeGuest()`.
 - **Métodos de Negocio:**
   - `registerRsvp(guestId, status, confirmedPlusOnes)`: Actualiza confirmación y valida límite de acompañantes.
-  - `assignTable(guestId, tableNumber, maxCapacity)`: Evalúa algorítmicamente que la suma de personas en la mesa no sobrepase su aforo máximo.
-  - `registerDietaryProfile(guestId, mealPref, allergies, notes)`: Sella las preferencias gastronómicas y advertencias médicas.
+  - `assignTable(guestId, tableNumber)`: Evalúa algorítmicamente que los ya sentados más el invitado y sus acompañantes no sobrepasen la capacidad registrada de la mesa en `event_tables`; si la excede, lanza `TableCapacityExceededError`.
+  - `registerDietaryProfile(guestId, mealPref, allergies, isCritical, notes)`: Sella las preferencias gastronómicas y, si la alergia es de riesgo médico, activa `has_critical_allergies`.
   - `generateCateringDietaryReport(eventId)`: Emite un informe estructurado para el chef/banquetero desglosando: (a) total de platillos por tipo de menú, (b) distribución de comensales por mesa, y (c) alertas críticas de alergias severas geolocalizadas por mesa.
   - `calculateRsvpMetrics(eventId)`: Retorna totales de invitados, confirmados, declinados y porcentaje de asistencia.
 
 ### 5. Componente de Proveedores (`VendorComponent`)
 - **Propósito:** Directorio y evaluación de empresas externas prestadoras de servicios.
-- **Datos Principales:** `id`, `organizer_id`, `business_name`, `category` (`catering`, `photography`, `music_dj`, `venue`, `decoration`, `transport`, `other`), `contact_name`, `email`, `phone`, `rating`.
+- **Datos Principales:** `id`, `organizer_id`, `business_name`, `category` (`catering`, `photography`, `music_dj`, `venue`, `decoration`, `flowers`, `security`, `transport`, `other`), `contact_name`, `email`, `phone`, `rating`.
 - **Operaciones CRUD:** `createVendor()`, `getVendorById()`, `listVendors()`, `updateVendor()`, `deleteVendor()`.
 - **Métodos de Negocio:**
   - `updateRating(vendorId, newRating)`: Calcula la calificación promedio histórica (escala 1.0 a 5.0).
@@ -138,7 +139,7 @@ El sistema está compuesto por 10 módulos altamente cohesivos y desacoplados:
 - **Operaciones CRUD:** `contractService()`, `getContractById()`, `listContractsByEvent()`, `cancelContract()`.
 - **Métodos de Negocio:**
   - `attachContractDocument(contractId, r2Key)`: Enlaza el archivo digital del contrato en Cloudflare R2.
-  - `generateExpense(contractId)`: Crea automáticamente el registro presupuestario con el monto pactado en estado `pending`.
+  - `generateExpense(contractId)`: Crea automáticamente el registro presupuestario con el monto pactado en estado `pending` y la misma categoría del proveedor (las categorías de gasto son las de proveedor más `contingency`).
 
 ### 7. Componente de Presupuesto y Gastos (`BudgetComponent` / `ExpenseComponent`)
 - **Propósito:** Control financiero exhaustivo, pagos y conciliación presupuestaria.
@@ -152,7 +153,7 @@ El sistema está compuesto por 10 módulos altamente cohesivos y desacoplados:
 
 ### 8. Componente de Tareas Operativas (`TaskComponent`)
 - **Propósito:** Checklist y seguimiento de actividades logísticas con plazos de vencimiento.
-- **Datos Principales:** `id`, `event_id`, `assigned_to`, `title`, `description`, `priority` (`low`, `medium`, `high`, `urgent`), `status` (`todo`, `in_progress`, `completed`), `due_date`, `completed_at`.
+- **Datos Principales:** `id`, `event_id`, `assigned_to`, `title`, `description`, `priority` (`low`, `medium`, `high`, `urgent`), `status` (`todo`, `in_progress`, `completed`, `cancelled`), `due_date`, `completed_at`.
 - **Operaciones CRUD:** `createTask()`, `getTaskById()`, `listTasksByEvent()`, `updateTask()`, `deleteTask()`.
 - **Métodos de Negocio:**
   - `completeTask(taskId)`: Cambia el estado a `completed`, registra `completed_at` y actualiza el avance general del evento.
@@ -203,14 +204,16 @@ classDiagram
         +string passwordHash
         +UserRole role
         +string phone
+        +boolean isActive
         +DateTime createdAt
-        +create(data: CreateUserDTO) User
-        +getById(userId: string) User
-        +update(userId: string, data: UpdateUserDTO) User
-        +delete(userId: string) boolean
-        +authenticate(password: string) AuthToken
-        +changePassword(oldPass: string, newPass: string) boolean
-        +deactivate() void
+        +DateTime updatedAt
+        +create(userData: CreateUserDTO): User
+        +getById(userId: string): User
+        +update(userId: string, data: UpdateUserDTO): User
+        +delete(userId: string): boolean
+        +authenticate(password: string): AuthToken
+        +changePassword(oldPass: string, newPass: string): boolean
+        +deactivate(): void
     }
 
     class Client {
@@ -222,12 +225,14 @@ classDiagram
         +string email
         +string phone
         +string notes
-        +create(data: CreateClientDTO) Client
-        +getById(clientId: string) Client
-        +update(clientId: string, data: UpdateClientDTO) Client
-        +delete(clientId: string) boolean
-        +linkUserAccount(userId: string) void
-        +getClientHistorySummary() ClientSummaryVO
+        +DateTime createdAt
+        +DateTime updatedAt
+        +create(clientData: CreateClientDTO): Client
+        +getById(clientId: string): Client
+        +update(clientId: string, data: UpdateClientDTO): Client
+        +delete(clientId: string): boolean
+        +linkUserAccount(userId: string): void
+        +getClientHistorySummary(): ClientSummaryVO
     }
 
     class Event {
@@ -242,17 +247,19 @@ classDiagram
         +string venueAddress
         +number initialBudget
         +number estimatedGuests
-        +create(data: CreateEventDTO) Event
-        +getById(eventId: string) Event
-        +update(eventId: string, data: UpdateEventDTO) Event
-        +delete(eventId: string) boolean
-        +confirmEvent() boolean
-        +cancelEvent(reason: string) void
-        +calculateBudget() BudgetSummaryVO
-        +calculateProgress() number
-        +cloneStructure(newTitle: string, newDate: Date) Event
-        +getEventSummary() EventDashboardVO
-        +generateCateringReport() CateringReportVO
+        +DateTime createdAt
+        +DateTime updatedAt
+        +create(data: CreateEventDTO): Event
+        +getById(eventId: string): Event
+        +update(eventId: string, data: UpdateEventDTO): Event
+        +delete(eventId: string): boolean
+        +confirmEvent(): boolean
+        +cancelEvent(reason: string): void
+        +calculateBudget(): BudgetSummaryVO
+        +calculateProgress(): number
+        +cloneStructure(newTitle: string, newDate: Date): Event
+        +getEventSummary(): EventDashboardVO
+        +generateCateringReport(): CateringReportVO
     }
 
     class Guest {
@@ -267,15 +274,33 @@ classDiagram
         +number plusOnes
         +MealPreference mealPreference
         +string allergies
+        +boolean hasCriticalAllergies
         +string dietaryRestrictions
-        +create(data: CreateGuestDTO) Guest
-        +getById(guestId: string) Guest
-        +update(guestId: string, data: UpdateGuestDTO) Guest
-        +delete(guestId: string) boolean
-        +registerRsvp(status: RsvpStatus, plusOnes: number) boolean
-        +assignTable(tableNum: number, maxCapacity: number) boolean
-        +registerDietaryProfile(mealPref: MealPreference, allergies: string, notes: string) void
-        +hasCriticalAllergies() boolean
+        +DateTime createdAt
+        +DateTime updatedAt
+        +create(guestData: CreateGuestDTO): Guest
+        +getById(guestId: string): Guest
+        +update(guestId: string, data: UpdateGuestDTO): Guest
+        +delete(guestId: string): boolean
+        +registerRsvp(status: RsvpStatus, plusOnes: number): boolean
+        +assignTable(table: EventTable, currentSeated: number): boolean
+        +canFitInTable(currentSeated: number, maxCapacity: number): boolean
+        +registerDietaryProfile(mealPref: MealPreference, allergies: string, isCritical: boolean, notes: string): void
+    }
+
+    class EventTable {
+        +string id
+        +string eventId
+        +number tableNumber
+        +string label
+        +number capacity
+        +DateTime createdAt
+        +DateTime updatedAt
+        +create(data: CreateEventTableDTO): EventTable
+        +getById(tableId: string): EventTable
+        +update(tableId: string, data: UpdateEventTableDTO): EventTable
+        +delete(tableId: string): boolean
+        +availableSeats(currentSeated: number): number
     }
 
     class Vendor {
@@ -287,11 +312,14 @@ classDiagram
         +string email
         +string phone
         +number rating
-        +create(data: CreateVendorDTO) Vendor
-        +getById(vendorId: string) Vendor
-        +update(vendorId: string, data: UpdateVendorDTO) Vendor
-        +delete(vendorId: string) boolean
-        +updateRating(newRating: number) void
+        +DateTime createdAt
+        +DateTime updatedAt
+        +create(vendorData: CreateVendorDTO): Vendor
+        +getById(vendorId: string): Vendor
+        +update(vendorId: string, data: UpdateVendorDTO): Vendor
+        +delete(vendorId: string): boolean
+        +updateRating(newRating: number): void
+        +getPerformanceMetrics(): VendorMetricsVO
     }
 
     class Service {
@@ -300,10 +328,12 @@ classDiagram
         +string name
         +string description
         +number basePrice
-        +create(data: CreateServiceDTO) Service
-        +getById(serviceId: string) Service
-        +update(serviceId: string, data: UpdateServiceDTO) Service
-        +delete(serviceId: string) boolean
+        +DateTime createdAt
+        +DateTime updatedAt
+        +create(serviceData: CreateServiceDTO): Service
+        +getById(serviceId: string): Service
+        +update(serviceId: string, data: UpdateServiceDTO): Service
+        +delete(serviceId: string): boolean
     }
 
     class EventService {
@@ -314,11 +344,14 @@ classDiagram
         +ContractStatus status
         +string contractUrl
         +string notes
-        +contract(data: ContractServiceDTO) EventService
-        +getById(contractId: string) EventService
-        +cancelContract() boolean
-        +attachContractDocument(r2Key: string) void
-        +generateExpense() Expense
+        +DateTime createdAt
+        +DateTime updatedAt
+        +contract(data: ContractServiceDTO): EventService
+        +getById(contractId: string): EventService
+        +update(contractId: string, data: UpdateContractDTO): EventService
+        +cancelContract(): boolean
+        +attachContractDocument(r2Key: string): void
+        +generateExpense(): Expense
     }
 
     class Expense {
@@ -332,12 +365,14 @@ classDiagram
         +PaymentStatus paymentStatus
         +string receiptUrl
         +DateTime paidAt
-        +create(data: CreateExpenseDTO) Expense
-        +getById(expenseId: string) Expense
-        +update(expenseId: string, data: UpdateExpenseDTO) Expense
-        +delete(expenseId: string) boolean
-        +registerPayment(receiptR2Key: string) void
-        +isOverdue() boolean
+        +DateTime createdAt
+        +DateTime updatedAt
+        +create(expenseData: CreateExpenseDTO): Expense
+        +getById(expenseId: string): Expense
+        +update(expenseId: string, data: UpdateExpenseDTO): Expense
+        +delete(expenseId: string): boolean
+        +registerPayment(receiptR2Key: string): void
+        +isOverdue(): boolean
     }
 
     class Task {
@@ -350,12 +385,15 @@ classDiagram
         +TaskStatus status
         +Date dueDate
         +DateTime completedAt
-        +create(data: CreateTaskDTO) Task
-        +getById(taskId: string) Task
-        +update(taskId: string, data: UpdateTaskDTO) Task
-        +delete(taskId: string) boolean
-        +completeTask() void
-        +isOverdue() boolean
+        +DateTime createdAt
+        +DateTime updatedAt
+        +create(taskData: CreateTaskDTO): Task
+        +getById(taskId: string): Task
+        +update(taskId: string, data: UpdateTaskDTO): Task
+        +delete(taskId: string): boolean
+        +completeTask(): void
+        +reassign(newUserId: string): void
+        +isOverdue(): boolean
     }
 
     class AgendaItem {
@@ -366,13 +404,16 @@ classDiagram
         +string endTime
         +string responsiblePerson
         +string locationDetail
+        +string notes
         +number orderIndex
-        +create(data: CreateAgendaItemDTO) AgendaItem
-        +getById(itemId: string) AgendaItem
-        +update(itemId: string, data: UpdateAgendaItemDTO) AgendaItem
-        +delete(itemId: string) boolean
-        +reposition(newOrderIndex: number) void
-        +hasTimeConflict(other: AgendaItem) boolean
+        +DateTime createdAt
+        +DateTime updatedAt
+        +create(data: CreateAgendaItemDTO): AgendaItem
+        +getById(itemId: string): AgendaItem
+        +update(itemId: string, data: UpdateAgendaItemDTO): AgendaItem
+        +delete(itemId: string): boolean
+        +reposition(newOrderIndex: number): void
+        +hasTimeConflict(other: AgendaItem): boolean
     }
 
     %% Relaciones y Cardinalidades
@@ -381,10 +422,12 @@ classDiagram
     User "1" --> "0..*" Vendor : "registra"
     User "1" <-- "0..*" Task : "asignado a"
 
-    Client "1" --> "0..*" Event : "titular de"
+    Client "1" --> "0..*" Event : "contrata"
     Client "0..1" --> "0..1" User : "acceso portal"
 
     Event "1" *-- "0..*" Guest : "compuesto por"
+    Event "1" *-- "0..*" EventTable : "mesas del salón"
+    EventTable "0..1" <-- "0..*" Guest : "sentado en"
     Event "1" *-- "0..*" Expense : "acumula"
     Event "1" *-- "0..*" Task : "contiene"
     Event "1" *-- "0..*" AgendaItem : "itinerario"
@@ -392,7 +435,7 @@ classDiagram
 
     Vendor "1" *-- "1..*" Service : "ofrece"
     Service "1" <-- "0..*" EventService : "referencia a"
-    EventService "0..1" <-- "0..*" Expense : "origina pago"
+    EventService "0..1" <-- "0..*" Expense : "vinculado a pago"
 ```
 
 ---
@@ -410,7 +453,7 @@ El stack tecnológico ha sido cuidadosamente seleccionado bajo la premisa de **e
 | **Cloudflare D1** | Base de Datos Relacional | Motor SQLite transaccional serverless integrado en la red de Cloudflare. | Almacenamiento ACID de usuarios, eventos, comensales, tareas y finanzas. |
 | **Drizzle ORM** | Capa de Mapeo Relacional | ORM tipado con TypeScript con cero sobrecarga en tiempo de ejecución. | Consultas seguras y generación automática de migraciones SQL para D1. |
 | **Cloudflare R2** | Almacenamiento de Objetos | Compatible con la API de Amazon S3 sin costos de transferencia saliente (*zero egress*). | Custodia de contratos de proveedores en PDF y fotografías de comprobantes de pago. |
-| **Cloudflare KV** | Almacén Clave-Valor | Acceso en memoria con latencia <15 ms distribuido globalmente. | Lista negra de tokens JWT revocados (*logout*) y control de tasa de peticiones. |
+| **Cloudflare KV** | Almacén Clave-Valor | Acceso en memoria con latencia <15 ms distribuido globalmente. | Lista negra de tokens JWT revocados (*logout*). |
 | **Vitest** | Framework de Testing | Compatible de forma nativa con ESM y TypeScript; rápida ejecución paralela. | Pruebas unitarias de la lógica matemática de presupuestos y aforo de mesas. |
 | **Git & GitHub** | Control de Versiones | Estándar global de gestión de código fuente colaborativo. | Trazabilidad del desarrollo, revisión de Pull Requests y ramas de trabajo. |
 | **GitHub Actions** | Automatización CI/CD | Orquestador de integración continua integrado nativamente en GitHub. | Ejecución automatizada de pruebas, linter, builds y despliegues sin intervención manual. |
@@ -465,7 +508,7 @@ flowchart TD
     %% CAPA 2: PERÍMETRO Y SEGURIDAD CLOUDFLARE
     %% ========================================================
     subgraph Tier2["2. Perímetro de Red Global Cloudflare (Anycast Edge)"]
-        WAF["🛡️ Cloudflare Anycast DNS & WAF\nTerminación TLS 1.3 / Mitigación DDoS / Enrutamiento Global"]
+        WAF["🛡️ Cloudflare Anycast DNS & WAF\nTLS 1.3 / Mitigación DDoS / Rate Limiting\nEnrutamiento Global"]
     end
 
     %% ========================================================
@@ -482,7 +525,7 @@ flowchart TD
     subgraph Tier4["4. Capa de Persistencia y Almacenamiento (Edge Storage)"]
         D1[("🗄️ Cloudflare D1\nBase de Datos SQLite ACID\nTablas: Events, Guests, Expenses")]
         R2[("🪣 Cloudflare R2\nObject Storage (Compatible S3)\nPDFs Contratos y Comprobantes")]
-        KV[("⚡ Cloudflare KV\nAlmacén Clave-Valor en Memoria\nBlacklist JWT y Rate Limiting")]
+        KV[("⚡ Cloudflare KV\nAlmacén Clave-Valor Distribuido\nBlacklist de JWT Revocados")]
     end
 
     %% Flujos de Red y Bindings Nativos Descendentes (Sintaxis Simétrica Sin Cruces)
@@ -607,7 +650,7 @@ flowchart TD
     %% NIVEL 2: PERÍMETRO Y SEGURIDAD AZURE
     subgraph AzureTier2 ["2. Perímetro de Red Global y Seguridad"]
         AzureDNS["🌐 Azure DNS\n(Resolución de Nombres Anycast Global)"]
-        AzureWAF["🛡️ Azure Front Door + Azure WAF\n(Terminación TLS 1.3 / Mitigación DDoS / Enrutamiento)"]
+        AzureWAF["🛡️ Azure Front Door + Azure WAF\n(TLS 1.3 / Mitigación DDoS / Rate Limiting / Enrutamiento)"]
         AzureDNS --> AzureWAF
     end
 
@@ -631,7 +674,7 @@ flowchart TD
 
     AzureFunctions -->|"Transacciones SQL"| AzureSQL
     AzureFunctions -->|"Put / Get Binarios"| AzureBlob
-    AzureFunctions -->|"Cache TTL / Rate Limit"| AzureRedis
+    AzureFunctions -->|"Tokens revocados (TTL)"| AzureRedis
 
     classDef whiteNode fill:#ffffff,stroke:#1e293b,stroke-width:1.5px,color:#0f172a;
     class AzureUsers,AzureDNS,AzureWAF,AzureStaticWeb,AzureFunctions,AzureSQL,AzureBlob,AzureRedis whiteNode;
@@ -648,7 +691,8 @@ flowchart TD
 | **Usuarios / Acceso** | Navegadores Web/Móvil | `General / Users` | Wedding Planners y anfitriones interactuando con la plataforma. |
 | **Frontend Web** | Cloudflare Pages | `Azure Static Web Apps` | Hospedaje y distribución global de la SPA React 18 + Vite. |
 | **DNS y Enrutamiento** | Cloudflare Anycast DNS | `Azure DNS` | Resolución de nombres con latencia mínima en el borde. |
-| **Seguridad Perimetral** | Cloudflare WAF & DDoS | `Azure Web Application Firewall (WAF)` | Inspección de paquetes, mitigación de ataques y terminación TLS. |
+| **Seguridad Perimetral** | Cloudflare WAF, DDoS y Rate Limiting | `Azure Front Door` + `Azure Web Application Firewall (WAF)` | Inspección de paquetes, mitigación de ataques, terminación TLS y enrutamiento. |
+| **API Gateway** | Hono Router (en Workers) | `Azure API Management` | Enrutamiento `/api/v1/*`, CORS, autenticación y validación de esquemas. |
 | **Cómputo Serverless** | Cloudflare Workers | `Azure Functions` | Ejecución de la API REST de Hono con tiempo de arranque en frío de 0 ms. |
 | **Base de Datos** | Cloudflare D1 (SQLite) | `Azure SQL Database Serverless` | Persistencia relacional ACID para usuarios, eventos, comensales y gastos. |
 | **Almacenamiento Objetos**| Cloudflare R2 | `Azure Blob Storage` | Custodia de contratos PDF de proveedores y comprobantes fotográficos. |
@@ -682,10 +726,10 @@ Se implementa un modelo de **Git Flow Adaptado y Pragmático**, balanceando el m
 - **Ramas Efímeras de Trabajo:**
   - `feature/<issue-id>-<slug>` (ej. `feature/06-event-lifecycle`): Creadas desde `develop` para desarrollar un Issue específico.
   - `fix/<issue-id>-<slug>`: Corrección de defectos detectados durante las pruebas en CI.
-  - `hotfix/<slug>`: Correcciones urgentes de producción originadas desde `main`.
+  - `hotfix/<issue-id>-<slug>`: Correcciones urgentes de producción originadas desde `main`.
 - **Convención de Mensajes (Conventional Commits v1.0.0):**
   - Formato: `<tipo>(<alcance>): <descripción>` (ej. `feat(budget): add overage warning calculation`).
-  - Tipos admitidos: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`.
+  - Tipos admitidos: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `ci`, `chore`.
 - **Integración Obligatoria por Pull Request:**
   - Ningún código se fusiona sin pasar los *Status Checks* de GitHub Actions (Linter ESLint, verificación de tipos TypeScript y $\ge 85\%$ de cobertura en pruebas Vitest).
 
@@ -738,7 +782,7 @@ gantt
     section F1: Análisis
     Casos de Uso, D1 DDL y UML        :done, 2026-10-04, 2026-10-10
     section F2: Base Proyecto
-    Monorepo, Drizzle, Wrangler       :active, 2026-10-10, 2026-10-16
+    Monorepo, Drizzle, Wrangler       :2026-10-10, 2026-10-16
     section F3: Backend API
     Hono API, Auth, Dominio           :2026-10-16, 2026-10-26
     section F4: Frontend SPA
@@ -889,7 +933,11 @@ La estrategia prioriza la verificación de la **capa de dominio y lógica de neg
      *Entrada:* Petición HTTP POST hacia la ruta protegida de registro de gastos `/api/v1/events/{id}/expenses`, enviada con el token de un usuario con rol `client`.  
      *Ejecución:* El middleware de autorización intercepta la petición y valida la matriz de permisos RBAC.  
      *Resultado Esperado:* Acceso denegado con código HTTP `403 Forbidden`, impidiendo que el cliente modifique presupuestos o contratos que corresponden exclusivamente al organizador.
-  3. **Escenario 5.3 — Revocación de Sesión Inmediata (Logout via Cloudflare KV):**  
+  3. **Escenario 5.3 — Aislamiento Multitenant entre Organizadores:**  
+     *Entrada:* El organizador A solicita `GET /api/v1/clients/{id}` de un cliente que pertenece al organizador B.  
+     *Ejecución:* El servicio filtra toda consulta por el `organizer_id` contenido en el token.  
+     *Resultado Esperado:* Respuesta `404 Not Found`, sin revelar la existencia del registro de otro organizador.
+  4. **Escenario 5.4 — Revocación de Sesión Inmediata (Logout via Cloudflare KV):**  
      *Entrada:* Usuario cierra sesión y se envía su token JWT vigente al endpoint de invalidación.  
      *Ejecución:* El identificador único del token (`jti`) se inserta en Cloudflare KV con clave `blacklist:<jti>` y un tiempo de vida (TTL) idéntico al remanente del token.  
      *Resultado Esperado:* Cualquier petición posterior utilizando ese mismo token es rechazada automáticamente con código HTTP `401 Unauthorized`.
@@ -904,7 +952,7 @@ La estrategia prioriza la verificación de la **capa de dominio y lógica de neg
 | **CP-MES-02** | Invitados y Salón | Aforo de mesas con comensal + acompañantes | Unitaria / Regla de Negocio | Bloqueo absoluto de asignaciones que sobrepasen la capacidad máxima de sillas. |
 | **CP-CAT-03** | Invitados y Catering | Registro de alergias y reporte de banquete | Unitaria / Integración | Desglose fiel de platillos y alertas médicas críticas visibles por número de mesa. |
 | **CP-AGE-04** | Agenda y Cronograma | Itinerario secuencial y detección de choques | Unitaria / Algorítmica | Identificación de empalmes temporales y espaciales en la misma locación. |
-| **CP-SEC-05** | Usuarios y Seguridad | Token JWT, matriz RBAC y revocación KV | Integración / Seguridad | Aislamiento de privilegios (403 a clientes) e invalidación efectiva de sesiones. |
+| **CP-SEC-05** | Usuarios y Seguridad | Token JWT, matriz RBAC, aislamiento multitenant y revocación KV | Integración / Seguridad | Aislamiento de privilegios (403 a clientes, 404 entre organizadores) e invalidación efectiva de sesiones. |
 
 ---
 
@@ -954,7 +1002,7 @@ Flujo textual lineal:
 - **M7:** Containerización con Docker Multi-stage.
 - **M8:** Pipeline CI/CD en GitHub Actions y Docker Hub.
 - **M9:** Despliegue en Producción a Cloudflare Workers y Pages.
-- **M10:** Documentación Técnica Integral, Release v1.0.0 y Presentación Ejecutiva.
+- **M10:** Documentación Final y Preparación de la Defensa.
 
 ### 10.3 Backlog de 23 Issues Accionables
 
@@ -963,10 +1011,10 @@ Flujo textual lineal:
 | **#01** | Setup del Monorepo, TypeScript, ESLint y Wrangler | M1 | Crítica | Ninguna |
 | **#02** | Esquema Relacional D1 y Migraciones con Drizzle ORM | M2 | Crítica | #01 |
 | **#03** | Módulo de Autenticación JWT y Roles RBAC (`admin`, `organizer`, `client`) | M3 | Alta | #02 |
-| **#04** | Revocación de Tokens (Logout) y Rate Limiting con Cloudflare KV | M3 | Media | #03 |
+| **#04** | Revocación de Tokens (Logout) con Cloudflare KV y Rate Limiting en WAF | M3 | Media | #03 |
 | **#05** | CRUD de Clientes y Aislamiento Multitenant por Organizador | M4 | Alta | #03 |
 | **#06** | Módulo de Eventos y Máquina de Estados del Ciclo de Vida | M4 | Crítica | #05 |
-| **#07** | Módulo de Invitados, Confirmación RSVP y Aforo de Mesas | M4 | Alta | #06 |
+| **#07** | Módulo de Invitados, RSVP, Aforo de Mesas y Reporte de Catering | M4 | Alta | #06 |
 | **#08** | Directorio de Proveedores y Catálogo de Servicios Base | M5 | Media | #03 |
 | **#09** | Contratación de Servicios (`event_services`) y Almacenamiento en Cloudflare R2 | M5 | Alta | #06, #08 |
 | **#10** | Motor de Presupuesto, Gastos y Semáforo de Sobrecosto | M5 | Crítica | #06, #09 |
@@ -974,7 +1022,7 @@ Flujo textual lineal:
 | **#12** | Cronograma Minuto a Minuto con Detección de Conflictos Horarios | M5 | Alta | #06 |
 | **#13** | Endpoints del Dashboard Ejecutivo de Métricas y KPIs | M5 | Media | #10, #11, #12 |
 | **#14** | Frontend: Setup de React 18, Vite, Tailwind CSS y Enrutamiento Protegido | M4 | Alta | #03 |
-| **#15** | Frontend: Vistas de Dashboard, Detalle de Evento y Presupuesto | M5 | Alta | #13, #14 |
+| **#15** | Frontend: Vistas de Dashboard, Evento, Invitados y Presupuesto | M5 | Alta | #13, #14 |
 | **#16** | Suite Integral de Pruebas Unitarias con Vitest ($\ge 85\%$ Dominio) | M6 | Crítica | #10, #11, #12 |
 | **#17** | Dockerización del Backend con Dockerfile Multi-Stage y Healthcheck | M7 | Alta | #01, #16 |
 | **#18** | Dockerización del Frontend con Nginx Alpine y Docker Compose Local | M7 | Alta | #15, #17 |
@@ -982,7 +1030,7 @@ Flujo textual lineal:
 | **#20** | Automatización de Construcción y Push a Docker Hub | M8 | Crítica | #17, #18, #19 |
 | **#21** | Automatización de Despliegue a Cloudflare Workers y Pages con Wrangler | M9 | Crítica | #20 |
 | **#22** | Documentación Técnica de Arquitectura y Especificación en Wiki | M10 | Alta | Todas |
-| **#23** | Elaboración de Presentación Ejecutiva de Arquitectura y Demo del Sistema | M10 | Alta | #22 |
+| **#23** | Elaboración de Guion y Estructura de Diapositivas de Presentación | M10 | Alta | #22 |
 
 ---
 

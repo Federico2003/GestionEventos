@@ -32,6 +32,7 @@ classDiagram
         +string passwordHash
         +UserRole role
         +string phone
+        +boolean isActive
         +DateTime createdAt
         +DateTime updatedAt
         +create(userData: CreateUserDTO): User
@@ -101,6 +102,7 @@ classDiagram
         +number plusOnes
         +MealPreference mealPreference
         +string allergies
+        +boolean hasCriticalAllergies
         +string dietaryRestrictions
         +DateTime createdAt
         +DateTime updatedAt
@@ -109,9 +111,24 @@ classDiagram
         +update(guestId: string, data: UpdateGuestDTO): Guest
         +delete(guestId: string): boolean
         +registerRsvp(status: RsvpStatus, plusOnes: number): boolean
-        +assignTable(tableNum: number, maxCapacity: number): boolean
-        +registerDietaryProfile(mealPref: MealPreference, allergies: string, notes: string): void
-        +hasCriticalAllergies(): boolean
+        +assignTable(table: EventTable, currentSeated: number): boolean
+        +canFitInTable(currentSeated: number, maxCapacity: number): boolean
+        +registerDietaryProfile(mealPref: MealPreference, allergies: string, isCritical: boolean, notes: string): void
+    }
+
+    class EventTable {
+        +string id
+        +string eventId
+        +number tableNumber
+        +string label
+        +number capacity
+        +DateTime createdAt
+        +DateTime updatedAt
+        +create(data: CreateEventTableDTO): EventTable
+        +getById(tableId: string): EventTable
+        +update(tableId: string, data: UpdateEventTableDTO): EventTable
+        +delete(tableId: string): boolean
+        +availableSeats(currentSeated: number): number
     }
 
     class Vendor {
@@ -237,6 +254,8 @@ classDiagram
     Client "0..1" --> "0..1" User : "acceso portal"
 
     Event "1" *-- "0..*" Guest : "compuesto por"
+    Event "1" *-- "0..*" EventTable : "mesas del salón"
+    EventTable "0..1" <-- "0..*" Guest : "sentado en"
     Event "1" *-- "0..*" Expense : "acumula"
     Event "1" *-- "0..*" Task : "contiene"
     Event "1" *-- "0..*" AgendaItem : "itinerario"
@@ -257,7 +276,7 @@ El modelo de clases no se limita a operaciones de acceso a datos (*Active Record
 - **Responsabilidad Central:** Es el agregado raíz (*Aggregate Root*) de la gestión operativa.
 - **Métodos de Negocio Destacados:**
   - `confirmEvent()`: Evalúa que existan condiciones mínimas (cliente asignado, fecha en el futuro y presupuesto base registrado) para avanzar el estado a `confirmed`.
-  - `cancelEvent(reason)`: Ejecuta una desactivación ordenada; suspende tareas activas y marca contrataciones de servicios pendientes en estado `cancelled`.
+  - `cancelEvent(reason)`: Ejecuta una desactivación ordenada; pasa a `cancelled` las tareas no completadas y marca contrataciones de servicios pendientes en estado `cancelled`.
   - `calculateBudget()`: Invoca la suma agregada de la colección de `Expense` para emitir un objeto inmutable de valor (`BudgetSummaryVO`) con presupuesto asignado, gastado, comprometido y disponible.
   - `calculateProgress()`: Retorna un porcentaje numérico del 0 al 100 calculado a partir de la razón entre tareas en estado `completed` sobre el total de tareas operativas registradas.
   - `cloneStructure(newTitle, newDate)`: Implementa el patrón *Prototype*; toma las tareas y la estructura del cronograma de un evento exitoso para inicializar uno nuevo ahorrando tiempo de configuración al organizador.
@@ -266,13 +285,21 @@ El modelo de clases no se limita a operaciones de acceso a datos (*Active Record
 - **Responsabilidad:** Gestión de confirmación de asistencia y control de aforo por mesa.
 - **Métodos de Negocio Destacados:**
   - `registerRsvp(status, plusOnes)`: Controla que los acompañantes no superen el límite establecido y actualiza la confirmación de asistencia.
-  - `assignTable(tableNum, maxCapacity)`: Verifica que la suma de invitados sentados previamente en `tableNum` más este invitado y sus `plusOnes` no exceda la capacidad máxima por mesa.
+  - `assignTable(table, currentSeated)`: Verifica, apoyándose en `canFitInTable()`, que los invitados ya sentados en la mesa más este invitado y sus `plusOnes` no excedan `table.capacity`. Si la excede, rechaza la operación con `TableCapacityExceededError`.
+  - `registerDietaryProfile(mealPref, allergies, isCritical, notes)`: Registra el menú asignado y las alergias; cuando el organizador marca una alergia como de riesgo médico, activa `hasCriticalAllergies` para que aparezca en la sección de alertas del Reporte Oficial para Catering.
+
+### 2.2.1 Clase `EventTable`
+- **Responsabilidad:** Representa una mesa física del salón con su número y su capacidad máxima de sillas. Es la fuente de la capacidad (`capacity`) que usa `Guest.assignTable()`.
+- **Método destacado:** `availableSeats(currentSeated)` devuelve los lugares libres para mostrarlos en la vista de distribución de mesas.
+
+### 2.2.2 Reporte Oficial para Catering
+- `Event.generateCateringReport()` consolida a los invitados confirmados del evento y devuelve un `CateringReportVO` con: (a) total de platillos por tipo de menú, (b) platillos por mesa y (c) alertas de invitados con `hasCriticalAllergies = true`, indicando invitado, mesa y alérgeno.
 
 ### 2.3 Clase `EventService`
 - **Responsabilidad:** Representa el contrato vinculante entre el organizador y el proveedor para un evento dado.
 - **Métodos de Negocio Destacados:**
   - `attachContractDocument(r2Key)`: Vincula la llave del archivo almacenado en Cloudflare R2 con el contrato legal.
-  - `generateExpense()`: Automatiza la creación de un objeto `Expense` para asegurar que todo servicio contratado se refleje inmediatamente en el balance presupuestario del evento.
+  - `generateExpense()`: Automatiza la creación de un objeto `Expense` (en estado `pending`, con el precio pactado y la misma categoría del proveedor) para asegurar que todo servicio contratado se refleje inmediatamente en el balance presupuestario del evento. `ExpenseCategory` comparte los valores de `VendorCategory` y añade `contingency`.
 
 ### 2.4 Clase `Expense`
 - **Responsabilidad:** Trazabilidad de desembolsos monetarios y cuentas por pagar.
@@ -284,4 +311,5 @@ El modelo de clases no se limita a operaciones de acceso a datos (*Active Record
 - **Responsabilidad:** Coordinación temporal previa (pre-producción) y durante el día del evento (producción en vivo).
 - **Métodos de Negocio Destacados:**
   - `completeTask()`: Marca la tarea como finalizada y sella `completedAt`.
+  - Al cancelar un evento (`Event.cancelEvent()`), las tareas que no estén en `completed` pasan a `cancelled`.
   - `hasTimeConflict(other: AgendaItem)`: Detecta solapamientos horarios en la misma locación o con la misma persona responsable, evitando choques en el itinerario de la fiesta.
