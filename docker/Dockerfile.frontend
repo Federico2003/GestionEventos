@@ -1,0 +1,38 @@
+# ==============================================================================
+# Planora Frontend — Imagen Docker multi-stage (Vite build + Nginx Alpine)
+# Construir desde la raíz del monorepo:
+#   docker build -f docker/Dockerfile.frontend -t planora-web .
+# ==============================================================================
+
+# ---------- Etapa 1: compilación de la SPA ----------
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+COPY package.json package-lock.json tsconfig.base.json ./
+COPY packages/api/package.json packages/api/
+COPY packages/frontend/package.json packages/frontend/
+
+RUN npm ci --workspace=packages/frontend --include-workspace-root --no-audit --no-fund
+
+COPY packages/frontend packages/frontend
+
+# La URL de la API se incrusta en el bundle en tiempo de compilación
+ARG VITE_API_URL=http://localhost:8787/api/v1
+ARG VITE_APP_ENV=docker
+ENV VITE_API_URL=${VITE_API_URL} \
+    VITE_APP_ENV=${VITE_APP_ENV}
+
+RUN npm run build --workspace=packages/frontend
+
+# ---------- Etapa 2: servidor estático ----------
+FROM nginx:1.27-alpine AS runner
+
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/packages/frontend/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget -qO- http://127.0.0.1/ > /dev/null || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

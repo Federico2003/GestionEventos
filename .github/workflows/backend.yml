@@ -1,0 +1,139 @@
+name: BackEnd CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build:
+    name: BackEnd - Build y Pruebas (UAT)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint --workspace=packages/api
+      - run: npm run build --workspace=packages/api
+
+      - name: Pruebas unitarias (reporte JUnit)
+        run: npx vitest run --project @planora/api
+        env:
+          VITEST_JUNIT_FILE: reports/backend-junit.xml
+
+      - name: Publicar reporte UAT
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: UAT Report - BackEnd
+          path: reports/backend-junit.xml
+          reporter: java-junit
+
+      - name: Cobertura
+        run: npm run test:coverage
+
+  docker-hub:
+    name: BackEnd - Docker Hub
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          file: docker/Dockerfile.api
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/planora-api:${{ github.ref_name == 'main' && 'latest' || 'dev' }}
+            ${{ secrets.DOCKER_USERNAME }}/planora-api:sha-${{ github.sha }}
+
+  deploy-dev:
+    name: BackEnd - Ambiente Dev
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: ID de la base D1 (variable D1_DATABASE_ID)
+        run: sed -i "s/__D1_DATABASE_ID__/${{ vars.D1_DATABASE_ID }}/" packages/api/wrangler.toml
+      - name: Migraciones D1
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
+          workingDirectory: packages/api
+          command: d1 migrations apply DB --remote --env dev
+      - name: Deploy del Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
+          workingDirectory: packages/api
+          environment: dev
+          secrets: |
+            JWT_SECRET
+            SENTRY_DSN
+            ALLOWED_ORIGINS
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          ALLOWED_ORIGINS: ${{ vars.FRONTEND_URL }}
+
+  deploy-prod:
+    name: BackEnd - Ambiente Prod
+    needs: [deploy-dev, docker-hub]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production   # Required reviewers: espera aprobación manual
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: ID de la base D1 (variable D1_DATABASE_ID)
+        run: sed -i "s/__D1_DATABASE_ID__/${{ vars.D1_DATABASE_ID }}/" packages/api/wrangler.toml
+      - name: Migraciones D1
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
+          workingDirectory: packages/api
+          command: d1 migrations apply DB --remote --env production
+      - name: Deploy del Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
+          workingDirectory: packages/api
+          environment: production
+          secrets: |
+            JWT_SECRET
+            SENTRY_DSN
+            ALLOWED_ORIGINS
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          ALLOWED_ORIGINS: ${{ vars.FRONTEND_URL }}
