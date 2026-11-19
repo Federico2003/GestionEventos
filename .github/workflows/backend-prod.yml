@@ -1,14 +1,17 @@
-name: BackEnd CI/CD
+name: BackEnd Prod
 
 on:
   push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: backend-prod-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
-    name: BackEnd - Build y Pruebas (UAT)
+    name: BackEnd Prod - Build y Pruebas (UAT)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -21,6 +24,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint --workspace=packages/api
+      - run: npm run typecheck --workspace=packages/api
       - run: npm run build --workspace=packages/api
 
       - name: Pruebas unitarias (reporte JUnit)
@@ -32,7 +36,7 @@ jobs:
         if: always()
         uses: dorny/test-reporter@v1
         with:
-          name: UAT Report - BackEnd
+          name: UAT Report - BackEnd Prod
           path: reports/backend-junit.xml
           reporter: java-junit
 
@@ -40,9 +44,8 @@ jobs:
         run: npm run test:coverage
 
   docker-hub:
-    name: BackEnd - Docker Hub
+    name: BackEnd Prod - Docker Hub
     needs: build
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,59 +58,12 @@ jobs:
           file: docker/Dockerfile.api
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/planora-api:${{ github.ref_name == 'main' && 'latest' || 'dev' }}
+            ${{ secrets.DOCKER_USERNAME }}/planora-api:latest
             ${{ secrets.DOCKER_USERNAME }}/planora-api:sha-${{ github.sha }}
-
-  deploy-dev:
-    name: BackEnd - Ambiente Dev
-    needs: build
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    environment: dev
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: ID de la base D1 (variable D1_DATABASE_ID)
-        run: |
-          if [ -z "${{ vars.D1_DATABASE_ID }}" ]; then
-            echo "::error::Falta la variable D1_DATABASE_ID en el environment dev"
-            exit 1
-          fi
-          sed -i "s/__D1_DATABASE_ID__/${{ vars.D1_DATABASE_ID }}/" packages/api/wrangler.toml
-      - name: Migraciones D1
-        working-directory: packages/api
-        run: npx --yes wrangler@4 d1 migrations apply DB --remote --env dev
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      - name: Deploy del Worker y secretos
-        working-directory: packages/api
-        run: |
-          for name in JWT_SECRET SENTRY_DSN ALLOWED_ORIGINS; do
-            if [ -z "${!name}" ]; then
-              echo "::error::Falta $name en el environment dev (secreto JWT_SECRET/SENTRY_DSN o variable FRONTEND_URL)"
-              exit 1
-            fi
-          done
-          npx --yes wrangler@4 deploy --env dev
-          node -e 'console.log(JSON.stringify({JWT_SECRET: process.env.JWT_SECRET, SENTRY_DSN: process.env.SENTRY_DSN, ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS}))' > "$RUNNER_TEMP/secrets.json"
-          npx --yes wrangler@4 secret bulk "$RUNNER_TEMP/secrets.json" --env dev
-          rm -f "$RUNNER_TEMP/secrets.json"
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-          ALLOWED_ORIGINS: ${{ vars.FRONTEND_URL }}
 
   deploy-prod:
     name: BackEnd - Ambiente Prod
-    needs: [deploy-dev, docker-hub]
-    if: github.ref == 'refs/heads/main'
+    needs: [build, docker-hub]
     runs-on: ubuntu-latest
     environment: production   # Required reviewers: espera aprobación manual
     steps:

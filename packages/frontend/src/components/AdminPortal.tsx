@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ThemeToggleButton } from '../context/ThemeContext';
 import {
   captureFrontendException,
@@ -13,7 +13,8 @@ import type {
   AuthUser,
   DashboardSummary,
   EventDetailResponse,
-  EventPortfolioItem
+  EventPortfolioItem,
+  HealthStatus
 } from '../types';
 
 type AdminTab = 'dashboard' | 'events' | 'guests' | 'catering' | 'budget' | 'agenda';
@@ -182,6 +183,26 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
   const telemetryConfig = resolveFrontendTelemetryConfig();
   const frontendSentryActive = isFrontendSentryEnabled();
+
+  // Estado real del ambiente desplegado (GET /api/v1/health)
+  const [health, setHealth] = useState<HealthStatus | null>(null);
+  const [healthError, setHealthError] = useState(false);
+  useEffect(() => {
+    let active = true;
+    api
+      .getHealth()
+      .then((result) => {
+        if (active) setHealth(result);
+      })
+      .catch(() => {
+        if (active) setHealthError(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [api]);
+  const apiOnline = health?.status === 'ok';
+  const d1Status = health?.database.status;
 
   const handleApmCheck = async (target: 'trace-message' | 'frontend-error' | 'backend-error') => {
     setFeedbackBanner(null);
@@ -506,15 +527,46 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 <div className="lg:col-span-5 surface-card rounded-2xl p-6 space-y-3">
                   <div className="flex items-center justify-between">
                     <h2 className="heading-font text-lg font-bold">Estado de Infraestructura Edge</h2>
-                    <span className="text-xs px-2 py-0.5 rounded bg-emerald-950 text-emerald-300">
-                      ● Online
+                    <span
+                      data-testid="health-badge"
+                      className={
+                        apiOnline
+                          ? 'text-xs px-2 py-0.5 rounded bg-emerald-950 text-emerald-300'
+                          : 'text-xs px-2 py-0.5 rounded bg-rose-950 text-rose-300'
+                      }
+                    >
+                      {health ? (apiOnline ? '● Online' : '● Degradado') : healthError ? '● Sin conexión' : '○ Consultando…'}
                     </span>
                   </div>
                   <div className="space-y-2.5 text-xs">
                     <div className="p-3 rounded-xl elevated-card flex justify-between">
-                      <span className="text-secondary-tone">Base de Datos Cloudflare D1</span>
+                      <span className="text-secondary-tone">Ambiente de la API</span>
                       <span className="font-mono font-semibold text-wood-accent">
-                        planora-d1-prod
+                        {health ? `${health.environment} • v${health.version}` : '—'}
+                      </span>
+                    </div>
+                    <div className="p-3 rounded-xl elevated-card flex justify-between">
+                      <span className="text-secondary-tone">Base de Datos Cloudflare D1</span>
+                      <span
+                        className={
+                          d1Status === 'connected'
+                            ? 'font-mono font-semibold text-emerald-500'
+                            : 'font-mono font-semibold text-wood-accent'
+                        }
+                      >
+                        {d1Status === 'connected'
+                          ? 'Conectada'
+                          : d1Status === 'error'
+                            ? 'Error de conexión'
+                            : d1Status === 'not_configured'
+                              ? 'Sin binding (memoria)'
+                              : '—'}
+                      </span>
+                    </div>
+                    <div className="p-3 rounded-xl elevated-card flex justify-between">
+                      <span className="text-secondary-tone">APM Sentry (API)</span>
+                      <span className="font-mono font-semibold text-wood-accent">
+                        {health ? (health.apm.enabled ? 'Activo' : 'Inactivo') : '—'}
                       </span>
                     </div>
                     <div className="p-3 rounded-xl elevated-card flex justify-between">
@@ -522,10 +574,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       <span className="font-mono font-semibold text-wood-accent">
                         {dashboard.contractsInR2} Contratos PDF
                       </span>
-                    </div>
-                    <div className="p-3 rounded-xl elevated-card flex justify-between">
-                      <span className="text-secondary-tone">Sesiones &amp; Blacklist JWT (KV)</span>
-                      <span className="font-mono font-semibold text-emerald-500">Activa</span>
                     </div>
                   </div>
                 </div>

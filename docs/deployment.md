@@ -72,12 +72,12 @@ flowchart TD
     end
 
     subgraph Registries["Registro Público"]
-        DockerHubRegistry[("Docker Hub Registry\nusername/planora-api\nusername/planora-frontend")]
+        DockerHubRegistry[("Docker Hub Registry\nfrederickz/planora-api\nfrederickz/planora-web")]
     end
 
     subgraph CloudflareProduction["Entorno de Producción Cloudflare"]
-        CFPagesLive["Cloudflare Pages Live\n(https://planora.app)"]
-        CFWorkersLive["Cloudflare Workers Live\n(https://planora.app/api/v1/*)"]
+        CFPagesLive["Cloudflare Pages\n(planora-web-dev / planora-web)"]
+        CFWorkersLive["Cloudflare Workers\n(planora-api-dev / planora-api-prod)"]
         CFD1Live[("Cloudflare D1 Database\n(Producción Migrada)")]
     end
 
@@ -98,169 +98,27 @@ flowchart TD
 
 ---
 
-## 3. Especificación del Pipeline de GitHub Actions
+## 3. Especificación de los Pipelines de GitHub Actions
 
-El archivo `.github/workflows/ci-cd.yml` implementa el flujo automatizado:
+El CI/CD está dividido en **cuatro workflows**, uno por componente y ambiente. Dev se despliega desde `develop` y Prod desde `main`, con aprobación manual:
 
-```yaml
-name: Planora CI/CD Pipeline
+| Workflow | Se dispara con | Jobs |
+|---|---|---|
+| [`backend-dev.yml`](../.github/workflows/backend-dev.yml) — **BackEnd Dev** | `pull_request` a `develop`/`main` (solo Build y Pruebas) y `push` a `develop` | Build y Pruebas (UAT) → Docker Hub `planora-api:dev` → Ambiente Dev |
+| [`backend-prod.yml`](../.github/workflows/backend-prod.yml) — **BackEnd Prod** | `push` a `main` (o manual) | Build y Pruebas (UAT) → Docker Hub `planora-api:latest` → ⏸ aprobación → Ambiente Prod |
+| [`frontend-dev.yml`](../.github/workflows/frontend-dev.yml) — **Frontend Dev** | `pull_request` a `develop`/`main` y `push` a `develop` | Build y Pruebas → Docker Hub `planora-web:dev` → Ambiente Dev |
+| [`frontend-prod.yml`](../.github/workflows/frontend-prod.yml) — **Frontend Prod** | `push` a `main` (o manual) | Build y Pruebas → Docker Hub `planora-web:latest` → ⏸ aprobación → Ambiente Prod |
 
-on:
-  push:
-    branches: [main, develop]
-    tags: ['v*.*.*']
-  pull_request:
-    branches: [main, develop]
+### Detalle de los jobs
+| Job | Qué hace |
+|---|---|
+| **Build y Pruebas** | `npm ci`, lint, typecheck (src, tests y scripts), build y Vitest con reporte JUnit publicado como **UAT Report**; en backend, además, cobertura con umbrales (dominio ≥ 85%). |
+| **Docker Hub** | Construye `docker/Dockerfile.api` o `docker/Dockerfile.frontend` y publica el tag del ambiente (`dev` o `latest`) y `sha-<commit>`. |
+| **BackEnd - Ambiente Dev / Prod** | Sustituye `D1_DATABASE_ID`, aplica `wrangler d1 migrations apply DB --remote`, despliega el Worker (`planora-api-dev` / `planora-api-prod`) y sube los secretos (`JWT_SECRET`, `SENTRY_DSN`, `ALLOWED_ORIGINS`). |
+| **Frontend - Ambiente Dev / Prod** | Compila con `VITE_API_URL`, `VITE_APP_ENV` y `VITE_SENTRY_DSN` del Environment y ejecuta `wrangler pages deploy` al proyecto `planora-web-dev` / `planora-web` (`--branch=main`, para que quede como despliegue productivo del proyecto y no como preview). |
+| **Aprobación manual** | Los jobs de Prod usan el Environment `production` con *Required reviewers*: el despliegue espera a que el responsable lo apruebe. |
 
-env:
-  API_IMAGE: planora-api
-  FRONTEND_IMAGE: planora-frontend
-
-jobs:
-  # ========================================================
-  # ETAPA 1: LINTING, TYPE CHECK Y PRUEBAS UNITARIAS
-  # ========================================================
-  quality-and-tests:
-    name: Code Quality & Unit Tests
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout del Repositorio
-        uses: actions/checkout@v4
-
-      - name: Configurar Node.js LTS (v20)
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-
-      - name: Instalar Dependencias del Monorepo
-        run: npm ci
-
-      - name: Verificación Estática de Tipos (TypeScript)
-        run: npm run typecheck
-
-      - name: Análisis de Código Estático (ESLint)
-        run: npm run lint
-
-      - name: Ejecución de Pruebas Unitarias (Vitest con umbrales de cobertura)
-        # Falla si la cobertura del dominio es < 85% (ver vitest.config.ts)
-        run: npm run test:coverage
-
-      - name: Publicar Reporte de Cobertura
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-coverage-report
-          path: coverage/
-
-  # ========================================================
-  # ETAPA 2: DOCKER BUILD & PUBLICACIÓN EN DOCKER HUB
-  # ========================================================
-  docker-hub-publish:
-    name: Docker Build & Push to Docker Hub
-    needs: quality-and-tests
-    runs-on: ubuntu-latest
-    # Publica en cada push a main y en cada tag de versión (v1.0.0, v1.0.1, ...)
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    steps:
-      - name: Checkout del Repositorio
-        uses: actions/checkout@v4
-
-      - name: Configurar Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login en Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_TOKEN }}
-
-      # Genera las etiquetas: latest (solo main), sha-<corto> y SemVer (en tags v*.*.*)
-      - name: Metadata de Tags (API)
-        id: meta-api
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ secrets.DOCKER_USERNAME }}/${{ env.API_IMAGE }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=sha-
-            type=semver,pattern=v{{version}}
-
-      - name: Metadata de Tags (Frontend)
-        id: meta-web
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ secrets.DOCKER_USERNAME }}/${{ env.FRONTEND_IMAGE }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=sha-
-            type=semver,pattern=v{{version}}
-
-      - name: Construir y Publicar Imagen Docker del Backend (API)
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./docker/Dockerfile.api
-          push: true
-          tags: ${{ steps.meta-api.outputs.tags }}
-          labels: ${{ steps.meta-api.outputs.labels }}
-
-      - name: Construir y Publicar Imagen Docker del Frontend
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./docker/Dockerfile.frontend
-          push: true
-          tags: ${{ steps.meta-web.outputs.tags }}
-          labels: ${{ steps.meta-web.outputs.labels }}
-
-  # ========================================================
-  # ETAPA 3: DESPLIEGUE CONTINUO EN CLOUDFLARE
-  # ========================================================
-  cloudflare-deploy:
-    name: Cloudflare Production Deployment
-    needs: docker-hub-publish
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    steps:
-      - name: Checkout del Repositorio
-        uses: actions/checkout@v4
-
-      - name: Configurar Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-
-      - name: Instalar Dependencias
-        run: npm ci
-
-      - name: Aplicar Migraciones D1 a Producción
-        working-directory: packages/api
-        run: npx wrangler d1 migrations apply planora-d1-prod --remote
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-
-      - name: Desplegar Cloudflare Worker (API)
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: packages/api
-          command: deploy
-
-      - name: Compilar Frontend React para Producción
-        run: npm run build --workspace=packages/frontend
-        env:
-          VITE_API_URL: https://planora.app/api/v1
-
-      - name: Desplegar Cloudflare Pages (Frontend)
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy packages/frontend/dist --project-name=planora-web
-```
+Todos los pasos de Cloudflare usan Node 22 (requisito de Wrangler 4).
 
 ### 3.1 Secretos Requeridos en GitHub (`Settings → Secrets and variables → Actions`)
 
@@ -273,6 +131,7 @@ jobs:
 
 **Variables por Environment (`dev` y `production`):** `CF_PAGES_PROJECT`, `FRONTEND_URL`, `VITE_API_URL` y `D1_DATABASE_ID` (ID de `planora-d1-dev` / `planora-d1-prod`, salida `d1_databases` de Terraform). El pipeline sustituye `__D1_DATABASE_ID__` en `wrangler.toml` y ejecuta `wrangler d1 migrations apply DB --remote` antes de desplegar el Worker.
 
-### 3.2 Integración Continua desde el Inicio del Proyecto
+### 3.2 Protección de Ramas
 
-Para que las reglas de protección de ramas (ver `branching-strategy.md`) tengan efecto desde el primer Pull Request, el job `quality-and-tests` se habilita desde el Milestone **M1** con los scripts básicos de lint, typecheck y pruebas. En el Milestone **M8** se completa el pipeline con los jobs de Docker Hub y en **M9** con el despliegue a Cloudflare.
+Los jobs **BackEnd - Build y Pruebas (UAT)** y **Frontend - Build y Pruebas** son los status checks que deben pasar antes de integrar un Pull Request a `develop` o `main` (ver `branching-strategy.md`).
+

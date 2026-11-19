@@ -40,7 +40,7 @@ flowchart TD
     %% CAPA 2: PERÍMETRO Y SEGURIDAD CLOUDFLARE
     %% ========================================================
     subgraph Tier2["2. Perímetro de Red Global Cloudflare (Anycast Edge)"]
-        WAF["🛡️ Cloudflare Anycast DNS & WAF\nTLS 1.3 / Mitigación DDoS / Rate Limiting\nEnrutamiento Global"]
+        WAF["🛡️ Cloudflare Anycast DNS & WAF\nTLS 1.3 / Mitigación DDoS\nEnrutamiento Global"]
     end
 
     %% ========================================================
@@ -123,7 +123,7 @@ flowchart LR
 
     %% ETAPA 3: REGISTRO DOCKER HUB
     subgraph REGISTRY["3. Registro OCI"]
-        DockerHub[("📦 Docker Hub\nuser/planora-api\nuser/planora-frontend")]
+        DockerHub[("📦 Docker Hub\nfrederickz/planora-api\nfrederickz/planora-web")]
     end
 
     %% ETAPA 4: DESPLIEGUE CLOUDFLARE
@@ -150,92 +150,114 @@ flowchart LR
 
 ---
 
-## 3. Inventario Detallado de Recursos Cloudflare
+## 3. Inventario de Recursos Cloudflare
 
-A continuación se detalla cada recurso en la nube que compone la infraestructura de **Planora**:
+Los recursos de cada ambiente se crean con **Terraform** desde el repositorio [GestionEventos-infra](https://github.com/Federico2003/GestionEventos-infra) (HCP Terraform, flujo VCS) y los pipelines despliegan el código sobre ellos.
 
-### Recurso 1: Cloudflare Pages (`planora-web`)
-- **Tipo de Recurso:** Plataforma de alojamiento JAMstack / SPA estática.
-- **Propósito:** Hospeda y entrega los archivos HTML, CSS, JavaScript e imágenes compiladas de la aplicación frontend desarrollada en React.
-- **Relación con otros recursos:** Es consumido por el navegador del usuario final. Las acciones del usuario dentro de la interfaz disparan peticiones AJAX/Fetch hacia el Cloudflare Worker de la API.
-- **Aprovisionamiento:** Desplegado desde GitHub Actions con `wrangler pages deploy packages/frontend/dist`; sirve el dominio `planora.app` (excepto `/api/v1/*`, que atiende el Worker).
+| Recurso | Dev | Prod | Creado por |
+|---|---|---|---|
+| Cloudflare Pages (frontend) | `planora-web-dev` → `planora-web-dev.pages.dev` | `planora-web` → `planora-web-31d.pages.dev` | Terraform (`modules/pages`) |
+| Cloudflare Worker (API) | `planora-api-dev.federico-zaragoza.workers.dev` | `planora-api-prod.federico-zaragoza.workers.dev` | Terraform (`modules/worker`) + `wrangler deploy` |
+| Cloudflare D1 | `planora-d1-dev` | `planora-d1-prod` | Terraform (`modules/d1`) + migraciones de Drizzle |
+| Rate Limiting de Workers | `AUTH_RATE_LIMITER` (10 peticiones / 10 s por IP) | `AUTH_RATE_LIMITER` | `wrangler.toml` |
+| Cloudflare R2 / KV | Opcionales (sin binding la API usa adaptadores en memoria) | Opcionales | `wrangler.toml` (comentados) |
 
-### Recurso 2: Cloudflare Worker (`planora-api`)
-- **Tipo de Recurso:** Cómputo serverless en el borde (*Edge Serverless Compute*).
-- **Propósito:** Ejecuta el backend RESTful con el framework Hono. Centraliza la autenticación, la validación de peticiones y toda la lógica de negocio (presupuestos, eventos, invitados, tareas).
-- **Relación con otros recursos:** Se comunica directamente con Cloudflare D1, R2 y KV mediante **Bindings de JavaScript nativos** inyectados en el contexto de ejecución (`env`), eliminando la necesidad de abrir sockets TCP manuales o exponer cadenas de conexión en texto plano.
-- **Aprovisionamiento:** Declarado y desplegado mediante `wrangler deploy`.
+### Pages (frontend)
+Hospeda la SPA de React compilada por Vite. Se despliega con `wrangler pages deploy packages/frontend/dist`.
 
-### Recurso 3: Cloudflare D1 (`planora-d1-prod`)
-- **Tipo de Recurso:** Base de datos relacional serverless basada en SQLite.
-- **Propósito:** Almacena todos los datos estructurados del sistema: usuarios, clientes, eventos, contrataciones, gastos, tareas, invitados y cronogramas.
-- **Relación con otros recursos:** Vinculado al Worker mediante el binding `env.DB`. Es operado a través de **Drizzle ORM** para ejecutar consultas SQL tipadas y transaccionales con garantías ACID.
-- **Aprovisionamiento:** Creado vía `wrangler d1 create planora-d1-prod`.
+### Worker (API)
+Ejecuta la API de Hono. Recibe los bindings `DB` (D1) y `AUTH_RATE_LIMITER`, y los secretos `JWT_SECRET`, `SENTRY_DSN` y `ALLOWED_ORIGINS`. `GET /api/v1/health` reporta el ambiente, el estado de Sentry y la conexión con D1.
 
-### Recurso 4: Cloudflare R2 (`planora-assets-prod`)
-- **Tipo de Recurso:** Almacén de objetos distribuido (*Object Storage*) compatible con Amazon S3 API.
-- **Propósito:** Almacena de manera persistente y cifrada los archivos binarios: contratos de servicios firmados en PDF, comprobantes de pago escaneados e imágenes de referencia de los eventos.
-- **Relación con otros recursos:** Vinculado al Worker mediante el binding `env.STORAGE`. Los archivos se suben y se descargan mediante URLs prefirmadas o streaming directo del Worker, sin incurrir en costos de transferencia saliente (*zero egress fees*).
-- **Aprovisionamiento:** Creado vía `wrangler r2 bucket create planora-assets-prod`.
+### D1 (base de datos)
+Esquema de 11 tablas definido con Drizzle ORM (`packages/api/src/infrastructure/db/schema.ts`). El pipeline aplica `migrations/` con `wrangler d1 migrations apply DB --remote` antes de cada deploy. Limitación conocida: la API conserva los datos de negocio en un almacén en memoria con datos de ejemplo; D1 contiene el esquema y se verifica en el healthcheck.
 
-### Recurso 5: Cloudflare KV (`planora-kv-prod`)
-- **Tipo de Recurso:** Almacén clave-valor distribuido globalmente de baja latencia (*Key-Value Store*).
-- **Propósito:** Lista negra de tokens JWT revocados (*token revocation blacklist*) para invalidar sesiones al hacer logout. Cada `jti` se guarda con un TTL igual al tiempo restante del token. Es un patrón de escritura única y muchas lecturas, ideal para KV.
-- **Relación con otros recursos:** Vinculado al Worker mediante el binding `env.KV_CACHE`.
-- **Aprovisionamiento:** Creado vía `wrangler kv namespace create planora-kv-prod`.
-
-### Recurso 6: Regla de Rate Limiting del WAF (`planora-auth-ratelimit`)
-- **Tipo de Recurso:** Regla de limitación de tasa del WAF de Cloudflare (incluida en el plan Free: 1 regla, conteo por IP, ventana de 10 s).
-- **Propósito:** Proteger los endpoints de autenticación contra fuerza bruta y abuso.
-- **Configuración:**
-  - **Expresión:** `starts_with(http.request.uri.path, "/api/v1/auth/")`
-  - **Característica de conteo:** IP de origen.
-  - **Límite:** 10 peticiones por periodo de 10 segundos.
-  - **Acción:** *Block* durante 10 segundos.
-- **Por qué no en KV:** KV tiene consistencia eventual (los cambios pueden tardar hasta ~60 s en propagarse) y admite como máximo una escritura por segundo por llave, por lo que no es confiable para contadores de alta frecuencia.
-- **Aprovisionamiento:** Panel de Cloudflare → *Security* → *WAF* → *Rate limiting rules* sobre la zona `planora.app`.
+### Rate Limiting de autenticación
+El binding `ratelimits` limita `/api/v1/auth/*` a 10 peticiones en 10 s por IP y responde **429** con `Retry-After: 10`. Se usa el limitador nativo de Workers porque las reglas de rate limiting del WAF solo aplican a zonas con dominio propio (no a `*.workers.dev`), y KV no es adecuado para contadores por su consistencia eventual.
 
 ---
 
-## 4. Configuración Declarativa de Infraestructura (`packages/api/wrangler.toml`)
-
-El siguiente archivo define formalmente la infraestructura como código (IaC) para el Worker de backend. Vive en `packages/api/`, por lo que las rutas son relativas a esa carpeta:
+## 4. Configuración del Worker (`packages/api/wrangler.toml`)
 
 ```toml
+# Configuración declarativa para Cloudflare Workers (Planora Backend API)
+# Las bases D1 (planora-d1-dev / planora-d1-prod) las crea Terraform (repo GestionEventos-infra).
+# El pipeline reemplaza __D1_DATABASE_ID__ con la variable D1_DATABASE_ID del environment de GitHub.
+# R2 y KV son opcionales: sin binding, la API usa adaptadores en memoria.
+
 name = "planora-api"
 main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
-# El Worker atiende únicamente las rutas de la API; el resto del dominio lo sirve Cloudflare Pages
-routes = [
-  { pattern = "planora.app/api/v1/*", zone_name = "planora.app" }
-]
-
-# Variables de entorno públicas
-[vars]
-ENVIRONMENT = "production"
-API_VERSION = "v1"
-
-# 1. BINDING A BASE DE DATOS CLOUDFLARE D1
-[[d1_databases]]
-binding = "DB"
-database_name = "planora-d1-prod"
-database_id = "d1-uuid-planora-production-001"   # valor real: salida de `wrangler d1 create`
-migrations_dir = "migrations"                     # carpeta donde drizzle-kit genera los .sql
-
-# 2. BINDING A STORAGE DE OBJETOS CLOUDFLARE R2
-[[r2_buckets]]
-binding = "STORAGE"
-bucket_name = "planora-assets-prod"
-
-# 3. BINDING A CACHÉ CLOUDFLARE KV
-[[kv_namespaces]]
-binding = "KV_CACHE"
-id = "kv-uuid-planora-production-001"   # valor real: salida de `wrangler kv namespace create`
-
-# Configuración de Observabilidad y Logs
 [observability]
 enabled = true
 head_sampling_rate = 1.0
+
+# ------------------------------------------------------------------------------
+# Ambiente Dev (rama `develop`)
+# ------------------------------------------------------------------------------
+[env.dev]
+name = "planora-api-dev"
+workers_dev = true
+
+[env.dev.vars]
+ENVIRONMENT = "development"
+NODE_ENV = "development"
+API_VERSION = "v1"
+SENTRY_TRACES_SAMPLE_RATE = "1.0"
+
+# Rate limiting de autenticación: 10 peticiones / 10 s por IP (responde 429)
+[[env.dev.ratelimits]]
+name = "AUTH_RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 10, period = 10 }
+
+[[env.dev.d1_databases]]
+binding = "DB"
+database_name = "planora-d1-dev"
+database_id = "__D1_DATABASE_ID__"
+migrations_dir = "migrations"
+
+# Opcional: descomentar tras crear los recursos en Cloudflare
+# [[env.dev.r2_buckets]]
+# binding = "STORAGE"
+# bucket_name = "planora-assets-dev"
+#
+# [[env.dev.kv_namespaces]]
+# binding = "KV_CACHE"
+# id = "<KV_DEV_ID>"
+
+# ------------------------------------------------------------------------------
+# Ambiente Prod (rama `main`)
+# ------------------------------------------------------------------------------
+[env.production]
+name = "planora-api-prod"
+workers_dev = true
+
+[env.production.vars]
+ENVIRONMENT = "production"
+NODE_ENV = "production"
+API_VERSION = "v1"
+SENTRY_TRACES_SAMPLE_RATE = "0.2"
+
+# Rate limiting de autenticación: 10 peticiones / 10 s por IP (responde 429)
+[[env.production.ratelimits]]
+name = "AUTH_RATE_LIMITER"
+namespace_id = "1002"
+simple = { limit = 10, period = 10 }
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "planora-d1-prod"
+database_id = "__D1_DATABASE_ID__"
+migrations_dir = "migrations"
+
+# Opcional: descomentar tras crear los recursos en Cloudflare
+# [[env.production.r2_buckets]]
+# binding = "STORAGE"
+# bucket_name = "planora-assets-prod"
+#
+# [[env.production.kv_namespaces]]
+# binding = "KV_CACHE"
+# id = "<KV_PROD_ID>"
 ```

@@ -77,6 +77,18 @@ function createSelfContainedMockApiClient(options?: {
       });
     }
 
+    if (url.endsWith('/health')) {
+      return jsonRes({
+        status: 'ok',
+        service: 'planora-api',
+        version: '1.0.0',
+        environment: 'development',
+        apm: { provider: 'sentry', enabled: true },
+        database: { provider: 'cloudflare-d1', status: 'connected', tables: { users: 5 } },
+        timestamp: '2026-11-18T00:00:00.000Z'
+      });
+    }
+
     if (url.endsWith('/dashboard')) {
       return jsonRes({
         totalEvents: 3,
@@ -481,6 +493,11 @@ describe('Frontend SPA — Login Minimalista, Modo Oscuro/Claro y Portales por R
     await user.click(screen.getByRole('button', { name: 'Ingresar' }));
 
     expect(await screen.findByText(/Monitoreo de Trazas, Errores y Mensajes/i)).toBeInTheDocument();
+
+    // Panel de infraestructura con el estado real de /api/v1/health
+    expect(await screen.findByTestId('health-badge')).toHaveTextContent('● Online');
+    expect(screen.getByText('development • v1.0.0')).toBeInTheDocument();
+    expect(screen.getByText('Conectada')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Enviar Traza \+ Mensaje APM/i }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/Traza y mensaje APM registrados/i);

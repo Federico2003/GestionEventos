@@ -35,21 +35,23 @@ Así, el contenedor ejecuta exactamente los mismos controladores, servicios y re
 
 ---
 
-## 2. Nombres de Imágenes Propuestos para Docker Hub
+## 2. Imágenes Publicadas en Docker Hub
 
-Siguiendo el estándar de nomenclatura OCI y Docker Hub:
+Los jobs `BackEnd - Docker Hub` y `Frontend - Docker Hub` publican en cada push a `develop` o `main`:
 
 ```text
 # Repositorio de Backend (API)
-[organization_or_user]/planora-api:latest
-[organization_or_user]/planora-api:v1.0.0
-[organization_or_user]/planora-api:sha-[commit-sha-corto]
+frederickz/planora-api:latest        # rama main
+frederickz/planora-api:dev           # rama develop
+frederickz/planora-api:sha-<commit>  # inmutable por commit
 
 # Repositorio de Frontend (Web UI)
-[organization_or_user]/planora-web:latest
-[organization_or_user]/planora-frontend:v1.0.0
-[organization_or_user]/planora-frontend:sha-[commit-sha-corto]
+frederickz/planora-web:latest
+frederickz/planora-web:dev
+frederickz/planora-web:sha-<commit>
 ```
+
+> La versión semántica de la entrega se marca con el tag de Git `v1.0.0`. La imagen `planora-web` se construye con `VITE_API_URL=http://localhost:8787/api/v1` porque está pensada para ejecutarse junto a la API con `docker compose`; los ambientes en la nube usan Cloudflare Pages.
 
 ---
 
@@ -57,117 +59,103 @@ Siguiendo el estándar de nomenclatura OCI y Docker Hub:
 
 ### 3.1 Dockerfile para Backend API (`docker/Dockerfile.api`)
 
-Utiliza construcción en múltiples etapas (*multi-stage build*) para reducir el tamaño final de la imagen a menos de 80 MB:
+Las pruebas y el typecheck corren en el pipeline de CI antes de construir la imagen, por lo que el Dockerfile solo compila y empaqueta. La API corre con `@hono/node-server` y adaptadores en memoria (mismo dominio que en Workers).
 
 ```dockerfile
-# -------------------------------------------------------------
-# ETAPA 1: Dependencias y Compilación
-# -------------------------------------------------------------
-FROM node:20-alpine AS builder
+# ==============================================================================
+# Planora API — Imagen Docker multi-stage (Node.js 20 Alpine)
+# Ejecuta la misma app Hono de Cloudflare Workers sobre Node (@hono/node-server).
+# Construir desde la raíz del monorepo:  docker build -f docker/Dockerfile.api -t planora-api .
+# ==============================================================================
 
+# ---------- Etapa 1: compilación ----------
+FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Herramientas para compilar el módulo nativo better-sqlite3 en Alpine (solo en esta etapa)
-RUN apk add --no-cache libc6-compat python3 make g++
+# Manifiestos del monorepo (npm workspaces necesita ambos package.json)
+COPY package.json package-lock.json tsconfig.base.json ./
+COPY packages/api/package.json packages/api/
+COPY packages/frontend/package.json packages/frontend/
 
-# Copiar manifiestos de paquetes
-COPY package*.json ./
-COPY packages/api/package*.json ./packages/api/
+# --ignore-scripts: la compilación con tsc no necesita binarios nativos (p. ej. better-sqlite3 de las pruebas)
+RUN npm ci --workspace=packages/api --include-workspace-root --ignore-scripts --no-audit --no-fund
 
-# Instalar dependencias completas (incluidas devDependencies para tests y build)
-RUN npm ci
-
-# Copiar código fuente
-COPY tsconfig*.json ./
-COPY packages/api ./packages/api
-
-# Ejecutar pruebas unitarias; si fallan, la imagen no se construye
-RUN npm run test --workspace=packages/api
-
-# Ejecutar verificación de tipos y compilación de TypeScript (genera dist/server.node.js)
+COPY packages/api packages/api
 RUN npm run build --workspace=packages/api
 
-# Eliminar devDependencies conservando los módulos nativos ya compilados
-RUN npm prune --omit=dev
+# ---------- Etapa 2: dependencias de producción ----------
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY packages/api/package.json packages/api/
+COPY packages/frontend/package.json packages/frontend/
+RUN npm ci --omit=dev --workspace=packages/api --no-audit --no-fund \
+    && npm cache clean --force
 
-# -------------------------------------------------------------
-# ETAPA 2: Imagen Ligera de Ejecución / Pruebas
-# -------------------------------------------------------------
+# ---------- Etapa 3: imagen final ----------
 FROM node:20-alpine AS runner
-
 WORKDIR /app
 
-ENV NODE_ENV=production
-ENV PORT=8787
-ENV DB_PATH=/app/data/planora.db
-ENV STORAGE_DIR=/app/data/storage
+ENV NODE_ENV=production \
+    PORT=8787
 
-# Crear usuario sin privilegios por seguridad
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 planora
+# Usuario sin privilegios dedicado para la API
+RUN addgroup -S planora && adduser -S -G planora planora
 
-# Copiar únicamente artefactos compilados, migraciones y dependencias de producción
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/packages/api/package*.json ./packages/api/
-COPY --from=builder /app/packages/api/dist ./packages/api/dist
-COPY --from=builder /app/packages/api/migrations ./packages/api/migrations
+COPY --from=deps --chown=planora:planora /app/node_modules ./node_modules
+COPY --from=deps --chown=planora:planora /app/package.json ./package.json
+COPY --from=builder --chown=planora:planora /app/packages/api/package.json ./packages/api/package.json
+COPY --from=builder --chown=planora:planora /app/packages/api/dist ./packages/api/dist
 
-# Carpeta de datos persistentes (SQLite y archivos) propiedad del usuario no-root
-RUN mkdir -p /app/data/storage && chown -R planora:nodejs /app/data
 USER planora
 
 EXPOSE 8787
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost:8787/api/v1/health || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- "http://127.0.0.1:${PORT}/api/v1/health" > /dev/null || exit 1
 
-# Aplica las migraciones al archivo SQLite local y levanta la API con @hono/node-server
 CMD ["node", "packages/api/dist/server.node.js"]
 ```
 
 ### 3.2 Dockerfile para Frontend (`docker/Dockerfile.frontend`)
 
-Compila el bundle de React con Vite y lo empaqueta dentro de un contenedor Nginx Alpine de menos de 25 MB:
-
 ```dockerfile
-# -------------------------------------------------------------
-# ETAPA 1: Construcción del Bundle Estático
-# -------------------------------------------------------------
-FROM node:20-alpine AS builder
+# ==============================================================================
+# Planora Frontend — Imagen Docker multi-stage (Vite build + Nginx Alpine)
+# Construir desde la raíz del monorepo:
+#   docker build -f docker/Dockerfile.frontend -t planora-web .
+# ==============================================================================
 
+# ---------- Etapa 1: compilación de la SPA ----------
+FROM node:20-alpine AS builder
 WORKDIR /app
 
-COPY package*.json ./
-COPY packages/frontend/package*.json ./packages/frontend/
+COPY package.json package-lock.json tsconfig.base.json ./
+COPY packages/api/package.json packages/api/
+COPY packages/frontend/package.json packages/frontend/
 
-RUN npm ci
+RUN npm ci --workspace=packages/frontend --include-workspace-root --no-audit --no-fund
 
-COPY tsconfig*.json ./
-COPY packages/frontend ./packages/frontend
+COPY packages/frontend packages/frontend
 
-# URL de la API que consumirá el navegador (se inyecta en tiempo de build)
+# La URL de la API se incrusta en el bundle en tiempo de compilación
 ARG VITE_API_URL=http://localhost:8787/api/v1
-ENV VITE_API_URL=$VITE_API_URL
+ARG VITE_APP_ENV=docker
+ENV VITE_API_URL=${VITE_API_URL} \
+    VITE_APP_ENV=${VITE_APP_ENV}
 
-# Compilación de Vite
 RUN npm run build --workspace=packages/frontend
 
-# -------------------------------------------------------------
-# ETAPA 2: Servidor Web Estático Nginx
-# -------------------------------------------------------------
-FROM nginx:1.25-alpine AS runner
+# ---------- Etapa 2: servidor estático ----------
+FROM nginx:1.27-alpine AS runner
 
-# Copiar configuración personalizada para SPA (soporte HTML5 History API)
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
-
-# Copiar archivos compilados
 COPY --from=builder /app/packages/frontend/dist /usr/share/nginx/html
 
 EXPOSE 80
 
-HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost:80/ || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget -qO- http://127.0.0.1/ > /dev/null || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]
 ```
@@ -175,21 +163,30 @@ CMD ["nginx", "-g", "daemon off;"]
 ### 3.3 Configuración de Nginx para la SPA (`docker/nginx.conf`)
 
 ```nginx
+# Nginx para la SPA de Planora (React Router): toda ruta desconocida sirve index.html
 server {
     listen 80;
+    server_name _;
     root /usr/share/nginx/html;
     index index.html;
 
-    # Rutas de React Router: cualquier ruta desconocida regresa index.html
+    gzip on;
+    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+
+    # Archivos con hash de Vite: caché larga
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }
 
-    # Caché larga para assets con hash generados por Vite
-    location /assets/ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 }
 ```
 
@@ -272,13 +269,13 @@ docker compose up -d --build
 
 ### Probar y Etiquetar para Docker Hub:
 ```bash
-docker tag planora-api:latest tu_usuario_dockerhub/planora-api:v1.0.0
-docker tag planora-web:latest tu_usuario_dockerhub/planora-web:v1.0.0
+docker tag planora-api:latest frederickz/planora-api:v1.0.0
+docker tag planora-web:latest frederickz/planora-web:v1.0.0
 ```
 
 ### Publicar en Docker Hub:
 ```bash
 docker login
-docker push tu_usuario_dockerhub/planora-api:v1.0.0
-docker push tu_usuario_dockerhub/planora-web:v1.0.0
+docker push frederickz/planora-api:v1.0.0
+docker push frederickz/planora-web:v1.0.0
 ```
