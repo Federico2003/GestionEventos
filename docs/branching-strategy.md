@@ -64,8 +64,8 @@ gitGraph
 
 | Nombre de Rama | Propósito | Rama Origen | Rama Destino de Merge | Despliegue Automatizado |
 |----------------|-----------|-------------|-----------------------|-------------------------|
-| `main` | **Producción Estable.** Código auditado y validado que se ejecuta en vivo para usuarios finales. | Ninguna (inicial) | Ninguna | Build y Pruebas (UAT) → Docker Hub (`latest`) → Ambiente Dev → ⏸ aprobación manual (Environment `production`) → Ambiente Prod. |
-| `develop` | **Integración.** Punto de convergencia donde se integran todas las características listas para validación conjunta. | `main` | `main` | Build y Pruebas (UAT) → Docker Hub (`dev`) → despliegue automático al **Ambiente Dev**. |
+| `main` | **Producción Estable.** Código auditado y validado que se ejecuta en vivo para usuarios finales. | Ninguna (inicial) | Ninguna | Workflows **BackEnd Prod** y **Frontend Prod**: Build y Pruebas (UAT) → Docker Hub (`latest`) → ⏸ aprobación manual (Environment `production`) → Ambiente Prod. |
+| `develop` | **Integración.** Punto de convergencia donde se integran todas las características listas para validación conjunta. | `main` | `main` | Workflows **BackEnd Dev** y **Frontend Dev**: Build y Pruebas (UAT) → Docker Hub (`dev`) → despliegue automático al **Ambiente Dev**. |
 | `feature/<id>-<slug>` | **Nuevas Características.** Desarrollo de una funcionalidad específica ligada a un Issue del Project Board. | `develop` | `develop` (vía PR) | En el PR: Build, lint y pruebas unitarias con reporte UAT (sin despliegue). |
 | `fix/<id>-<slug>` | **Corrección de Defectos.** Solución de bugs detectados durante pruebas en la rama `develop`. | `develop` | `develop` (vía PR) | Ejecuta pruebas unitarias y regresión (CI). |
 | `hotfix/<id>-<slug>` | **Parche Crítico de Producción.** Correcciones urgentes de incidentes en vivo sobre `main`. | `main` | `main` y sincronizado a `develop` | Despliegue inmediato a Producción con parche de versión SemVer. |
@@ -127,7 +127,7 @@ docs(architecture): actualizar diagrama de infraestructura Cloudflare en Mermaid
    - Se prohíbe el `git push --force` directo sobre `main` y `develop`.
    - Toda integración a `develop` o `main` debe originarse obligatoriamente mediante un **Pull Request**.
 2. **Requisitos de Integración Continua (Branch Protection Rules):**
-   - Los pipelines `backend.yml` y `frontend.yml` deben reportar `passed` en los jobs **BackEnd - Build y Pruebas (UAT)** y **Frontend - Build y Pruebas** (build, lint, pruebas unitarias con reporte JUnit y cobertura ≥ 85% en dominio) antes de permitir el merge.
+   - Los workflows `backend-dev.yml` y `frontend-dev.yml` deben reportar `passed` en los jobs **BackEnd Dev - Build y Pruebas (UAT)** y **Frontend Dev - Build y Pruebas** (build, lint, pruebas unitarias con reporte JUnit y cobertura ≥ 85% en dominio) antes de permitir el merge.
 3. **Estrategia de Merge:**
    - Para integrar `feature/*` a `develop`: Se utiliza **Create a merge commit**. Cada rama contiene un commit atómico ligado a su issue (Conventional Commits), por lo que el historial de `develop` conserva la trazabilidad commit → issue, y las ramas encadenadas se integran en orden sin reescribir historia.
    - Para integrar `develop` a `main`: Se utiliza **Merge Commit** explícito con tag de versión (e.g., `v1.0.0`), documentando la entrega formal (*release*).

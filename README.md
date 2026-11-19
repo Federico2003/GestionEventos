@@ -12,7 +12,7 @@
 > **Plataforma SaaS B2B para Gestión de Eventos Profesionales**  
 > **Arquitectura:** Serverless Edge Computing, Clean Architecture, CI/CD Automatizado (GitHub Actions) y APM con Sentry.
 
-> **Estado actual:** el monorepo (`packages/api` y `packages/frontend`) cuenta con lógica de dominio, API REST Hono, SPA React 18, monitoreo APM con Sentry (**Trazas, Errores y Mensajes**), configuración `packages/api/wrangler.toml`, plantilla `.env.example` y pipelines de GitHub Actions ([`.github/workflows/backend.yml`](.github/workflows/backend.yml) y [`.github/workflows/frontend.yml`](.github/workflows/frontend.yml)) para **Build**, **Pruebas Unitarias** y despliegue a ambientes **Dev** (`develop`) y **Prod** (`main`). El aprovisionamiento manual de recursos en la nube (D1/R2/KV, cuentas Cloudflare, proyecto Sentry y Docker) se configura mediante Secrets y Variables de GitHub Environments.
+> **Estado actual:** el monorepo (`packages/api` y `packages/frontend`) cuenta con lógica de dominio, API REST Hono, SPA React 18, monitoreo APM con Sentry (**Trazas, Errores y Mensajes**), configuración `packages/api/wrangler.toml`, plantilla `.env.example` y pipelines de GitHub Actions ([`backend-dev.yml`](.github/workflows/backend-dev.yml), [`backend-prod.yml`](.github/workflows/backend-prod.yml), [`frontend-dev.yml`](.github/workflows/frontend-dev.yml) y [`frontend-prod.yml`](.github/workflows/frontend-prod.yml)) para **Build**, **Pruebas Unitarias** y despliegue a ambientes **Dev** (`develop`) y **Prod** (`main`). El aprovisionamiento manual de recursos en la nube (D1/R2/KV, cuentas Cloudflare, proyecto Sentry y Docker) se configura mediante Secrets y Variables de GitHub Environments.
 
 ---
 
@@ -144,10 +144,12 @@ npx wrangler pages deploy packages/frontend/dist --project-name=planora-web-dev 
 npx wrangler pages deploy packages/frontend/dist --project-name=planora-web --branch=main
 ```
 
-- **Pipelines CI/CD:** [`.github/workflows/backend.yml`](.github/workflows/backend.yml) y [`.github/workflows/frontend.yml`](.github/workflows/frontend.yml).
-  - **BackEnd:** Build → Pruebas Unitarias + **UAT Report** (JUnit) + Cobertura → **Docker Hub** (`planora-api`) → **Ambiente Dev** (migraciones D1 + Worker) → ⏸ aprobación → **Ambiente Prod**.
-  - **Frontend:** Build → Pruebas Unitarias + reporte → **Docker Hub** (`planora-web`) → **Ambiente Dev** → ⏸ aprobación → **Ambiente Prod**.
-  - Un push a `develop` despliega solo a Dev. Un merge a `main` despliega a Dev y, tras la aprobación del Environment `production` (Required reviewers), promueve a Prod.
+- **Pipelines CI/CD:** cuatro workflows, uno por componente y ambiente: [`backend-dev.yml`](.github/workflows/backend-dev.yml), [`backend-prod.yml`](.github/workflows/backend-prod.yml), [`frontend-dev.yml`](.github/workflows/frontend-dev.yml) y [`frontend-prod.yml`](.github/workflows/frontend-prod.yml).
+  - **BackEnd Dev** (push a `develop`): Build → Pruebas Unitarias + **UAT Report** (JUnit) + Cobertura → **Docker Hub** (`planora-api:dev`) → **Ambiente Dev** (migraciones D1 + Worker).
+  - **BackEnd Prod** (push a `main`): Build → Pruebas + **UAT Report** + Cobertura → **Docker Hub** (`planora-api:latest`) → ⏸ aprobación → **Ambiente Prod**.
+  - **Frontend Dev** (push a `develop`): Build → Pruebas + reporte → **Docker Hub** (`planora-web:dev`) → **Ambiente Dev** (Pages).
+  - **Frontend Prod** (push a `main`): Build → Pruebas + reporte → **Docker Hub** (`planora-web:latest`) → ⏸ aprobación → **Ambiente Prod**.
+  - Los Pull Requests hacia `develop` y `main` ejecutan los jobs de Build y Pruebas de los workflows Dev, sin desplegar.
 - **APM con Sentry:** Configura `SENTRY_DSN` (Backend) y `VITE_SENTRY_DSN` (Frontend) según [`.env.example`](.env.example) y valida trazas, mensajes, errores y logs mediante `GET /api/v1/apm/test?mode=message|error|log` o desde el panel **Observabilidad APM • Sentry** del Dashboard Administrador.
 - **Métricas:** CPU, memoria y requests del Worker en Cloudflare → *Workers & Pages* → `planora-api-dev` / `planora-api-prod` → *Metrics*.
 
