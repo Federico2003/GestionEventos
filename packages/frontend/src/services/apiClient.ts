@@ -7,6 +7,7 @@ import type {
   EventPortfolioItem,
   ExpenseItem,
   GuestItem,
+  HealthStatus,
   TaskItem
 } from '../types';
 
@@ -165,6 +166,10 @@ export class PlanoraApiClient {
     } finally {
       this.setToken(null);
     }
+  }
+
+  public async getHealth(): Promise<HealthStatus> {
+    return this.request<HealthStatus>('/health');
   }
 
   public async getDashboard(): Promise<DashboardSummary> {

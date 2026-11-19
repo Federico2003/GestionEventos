@@ -19,6 +19,30 @@ export interface DashboardSummary {
   totalTablesCount: number;
   totalCriticalAllergies: number;
   contractsInR2: number;
+  activeEvents?: number;
+  overdueTasks?: number;
+  upcomingEvents?: Array<{
+    id: string;
+    title: string;
+    eventDate: string;
+    status: string;
+    venueName: string;
+  }>;
+}
+
+/** Respuesta de GET /api/v1/health (estado real del ambiente desplegado). */
+export interface HealthStatus {
+  status: string;
+  service: string;
+  version: string;
+  environment: string;
+  apm: { provider: string; enabled: boolean };
+  database: {
+    provider: string;
+    status: 'connected' | 'error' | 'not_configured';
+    tables?: Record<string, number>;
+  };
+  timestamp: string;
 }
 
 export interface EventPortfolioItem {

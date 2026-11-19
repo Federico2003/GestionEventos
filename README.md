@@ -37,7 +37,7 @@ A diferencia de los portales de descubrimiento masivo de boletos, **Planora** fu
 La plataforma implementa una **Arquitectura Limpia (Clean Architecture / Puertos y Adaptadores)** desacoplada y diseñada para operar nativamente en la red global Anycast de **Cloudflare**:
 
 ```text
-Usuario → Frontend (React SPA) → Cloudflare Edge (WAF/DNS) → API Gateway (Hono) → Servicios de Dominio → Persistencia (D1/R2/KV)
+Usuario → Frontend (React SPA) → Cloudflare Edge (DNS/DDoS/Rate Limiting) → API Gateway (Hono) → Servicios de Dominio → Persistencia (D1/R2/KV)
 ```
 
 - **Frontend (Capa de Presentación):** Single Page Application en **React 18 + TypeScript + Vite + Tailwind CSS**, servida desde **Cloudflare Pages**.
@@ -77,7 +77,7 @@ Toda la especificación técnica, modelos y diseño se encuentra detallada en la
 ## 💻 Guía Rápida de Ejecución Local
 
 ### Prerrequisitos
-- Node.js v20 LTS o superior
+- Node.js v22 o superior (requerido por Wrangler 4)
 - Docker y Docker Compose v2 (opcional para ejecución en contenedores)
 - Cuenta en Cloudflare y Wrangler CLI instalado (`npm i -g wrangler`)
 
@@ -140,7 +140,7 @@ npx wrangler deploy --env production
 cd ../..
 
 # Desplegar Frontend en Cloudflare Pages
-npx wrangler pages deploy packages/frontend/dist --project-name=planora-web-dev --branch=develop
+npx wrangler pages deploy packages/frontend/dist --project-name=planora-web-dev --branch=main
 npx wrangler pages deploy packages/frontend/dist --project-name=planora-web --branch=main
 ```
 
