@@ -64,6 +64,19 @@ import {
   updateRsvpSchema
 } from './validation/schemas';
 
+/**
+ * Normaliza el nombre de un archivo subido para usarlo como parte de la llave en R2:
+ * elimina rutas (`/`, `\\`), secuencias `..` y caracteres fuera de [A-Za-z0-9._-].
+ */
+export function sanitizeFileName(fileName: string): string {
+  const baseName = fileName.split(/[\\/]/).pop() ?? '';
+  const cleaned = baseName
+    .replace(/\.\.+/g, '.')
+    .replace(/[^A-Za-z0-9._-]/g, '_')
+    .replace(/^[.]+/, '');
+  return cleaned.length > 0 ? cleaned.slice(0, 120) : 'archivo';
+}
+
 export interface AppDependencies {
   kv?: KVStore;
   storage?: ObjectStoragePort;
@@ -1102,9 +1115,14 @@ export function createApp(deps: AppDependencies = {}): Hono<{ Variables: AppVari
     }
 
     guest.registerRsvp(data.rsvpStatus, data.plusOnes);
-    if (data.mealPreference !== undefined) {
+    const dietaryChanged =
+      data.mealPreference !== undefined ||
+      data.allergies !== undefined ||
+      data.hasCriticalAllergies !== undefined ||
+      data.dietaryRestrictions !== undefined;
+    if (dietaryChanged) {
       guest.registerDietaryProfile(
-        data.mealPreference,
+        data.mealPreference ?? guest.mealPreference,
         data.allergies ?? guest.allergies,
         data.hasCriticalAllergies ?? guest.hasCriticalAllergies,
         data.dietaryRestrictions ?? guest.dietaryRestrictions
@@ -1208,7 +1226,7 @@ export function createApp(deps: AppDependencies = {}): Hono<{ Variables: AppVari
     }
 
     const { receiptFileName, contentBase64 } = registerPaymentSchema.parse(await c.req.json());
-    const key = `receipts/${event.id}/${expense.id}-${receiptFileName}`;
+    const key = `receipts/${event.id}/${expense.id}-${sanitizeFileName(receiptFileName)}`;
     await storage.putObject(key, contentBase64, 'application/pdf');
     expense.registerPayment(key);
 
@@ -1278,7 +1296,7 @@ export function createApp(deps: AppDependencies = {}): Hono<{ Variables: AppVari
     }
 
     const { fileName, contentBase64 } = attachContractDocSchema.parse(await c.req.json());
-    const key = `contracts/${event.id}/${contract.id}-${fileName}`;
+    const key = `contracts/${event.id}/${contract.id}-${sanitizeFileName(fileName)}`;
     const stored = await storage.putObject(key, contentBase64, 'application/pdf');
     contract.attachContractDocument(key);
 
