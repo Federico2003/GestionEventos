@@ -100,23 +100,23 @@ flowchart TD
 
 ## 3. Especificación de los Pipelines de GitHub Actions
 
-El CI/CD está dividido en dos workflows, uno por componente. Ambos se disparan con `push` y `pull_request` hacia `develop` y `main`.
+El CI/CD está dividido en **cuatro workflows**, uno por componente y ambiente. Dev se despliega desde `develop` y Prod desde `main`, con aprobación manual:
 
-### [`backend.yml`](../.github/workflows/backend.yml) — BackEnd CI/CD
-| Job | Cuándo corre | Qué hace |
+| Workflow | Se dispara con | Jobs |
 |---|---|---|
-| **BackEnd - Build y Pruebas (UAT)** | Siempre (PR y push) | `npm ci`, lint, typecheck (src, tests y scripts), build, Vitest con reporte JUnit publicado como **UAT Report** y cobertura con umbrales (dominio ≥ 85%). |
-| **BackEnd - Docker Hub** | Push a `develop` / `main` | Construye `docker/Dockerfile.api` y publica `planora-api:{latest\|dev}` y `:sha-<commit>`. |
-| **BackEnd - Ambiente Dev** | Push a `develop` / `main` (Environment `dev`) | Sustituye `D1_DATABASE_ID`, aplica `wrangler d1 migrations apply DB --remote`, despliega el Worker `planora-api-dev` y sube los secretos (`JWT_SECRET`, `SENTRY_DSN`, `ALLOWED_ORIGINS`). |
-| **BackEnd - Ambiente Prod** | Solo `main`, tras Dev y Docker Hub (Environment `production` con aprobación manual) | Mismos pasos contra `planora-d1-prod` y `planora-api-prod`. |
+| [`backend-dev.yml`](../.github/workflows/backend-dev.yml) — **BackEnd Dev** | `pull_request` a `develop`/`main` (solo Build y Pruebas) y `push` a `develop` | Build y Pruebas (UAT) → Docker Hub `planora-api:dev` → Ambiente Dev |
+| [`backend-prod.yml`](../.github/workflows/backend-prod.yml) — **BackEnd Prod** | `push` a `main` (o manual) | Build y Pruebas (UAT) → Docker Hub `planora-api:latest` → ⏸ aprobación → Ambiente Prod |
+| [`frontend-dev.yml`](../.github/workflows/frontend-dev.yml) — **Frontend Dev** | `pull_request` a `develop`/`main` y `push` a `develop` | Build y Pruebas → Docker Hub `planora-web:dev` → Ambiente Dev |
+| [`frontend-prod.yml`](../.github/workflows/frontend-prod.yml) — **Frontend Prod** | `push` a `main` (o manual) | Build y Pruebas → Docker Hub `planora-web:latest` → ⏸ aprobación → Ambiente Prod |
 
-### [`frontend.yml`](../.github/workflows/frontend.yml) — Frontend CI/CD
-| Job | Cuándo corre | Qué hace |
-|---|---|---|
-| **Frontend - Build y Pruebas** | Siempre | `npm ci`, lint, typecheck, build y Vitest con reporte JUnit. |
-| **Frontend - Docker Hub** | Push a `develop` / `main` | Publica `planora-web:{latest\|dev}` y `:sha-<commit>`. |
-| **Frontend - Ambiente Dev** | Push a `develop` / `main` | Compila con `VITE_API_URL`, `VITE_APP_ENV` y `VITE_SENTRY_DSN` del Environment `dev` y ejecuta `wrangler pages deploy` al proyecto `planora-web-dev` (`--branch=main`, para que quede como despliegue productivo del proyecto y no como preview). |
-| **Frontend - Ambiente Prod** | Solo `main`, con aprobación manual | Igual contra el proyecto `planora-web`. |
+### Detalle de los jobs
+| Job | Qué hace |
+|---|---|
+| **Build y Pruebas** | `npm ci`, lint, typecheck (src, tests y scripts), build y Vitest con reporte JUnit publicado como **UAT Report**; en backend, además, cobertura con umbrales (dominio ≥ 85%). |
+| **Docker Hub** | Construye `docker/Dockerfile.api` o `docker/Dockerfile.frontend` y publica el tag del ambiente (`dev` o `latest`) y `sha-<commit>`. |
+| **BackEnd - Ambiente Dev / Prod** | Sustituye `D1_DATABASE_ID`, aplica `wrangler d1 migrations apply DB --remote`, despliega el Worker (`planora-api-dev` / `planora-api-prod`) y sube los secretos (`JWT_SECRET`, `SENTRY_DSN`, `ALLOWED_ORIGINS`). |
+| **Frontend - Ambiente Dev / Prod** | Compila con `VITE_API_URL`, `VITE_APP_ENV` y `VITE_SENTRY_DSN` del Environment y ejecuta `wrangler pages deploy` al proyecto `planora-web-dev` / `planora-web` (`--branch=main`, para que quede como despliegue productivo del proyecto y no como preview). |
+| **Aprobación manual** | Los jobs de Prod usan el Environment `production` con *Required reviewers*: el despliegue espera a que el responsable lo apruebe. |
 
 Todos los pasos de Cloudflare usan Node 22 (requisito de Wrangler 4).
 

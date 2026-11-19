@@ -1,14 +1,18 @@
-name: Frontend CI/CD
+name: Frontend Dev
 
 on:
-  push:
-    branches: [main, develop]
   pull_request:
-    branches: [main, develop]
+    branches: [develop, main]
+  push:
+    branches: [develop]
+
+concurrency:
+  group: frontend-dev-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
-    name: Frontend - Build y Pruebas
+    name: Frontend Dev - Build y Pruebas
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -33,12 +37,12 @@ jobs:
         if: always()
         uses: dorny/test-reporter@v1
         with:
-          name: Test Report - Frontend
+          name: Test Report - Frontend Dev
           path: reports/frontend-junit.xml
           reporter: java-junit
 
   docker-hub:
-    name: Frontend - Docker Hub
+    name: Frontend Dev - Docker Hub
     needs: build
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -53,12 +57,12 @@ jobs:
           file: docker/Dockerfile.frontend
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/planora-web:${{ github.ref_name == 'main' && 'latest' || 'dev' }}
+            ${{ secrets.DOCKER_USERNAME }}/planora-web:dev
             ${{ secrets.DOCKER_USERNAME }}/planora-web:sha-${{ github.sha }}
 
   deploy-dev:
     name: Frontend - Ambiente Dev
-    needs: build
+    needs: [build, docker-hub]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: dev
@@ -73,31 +77,6 @@ jobs:
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
           VITE_APP_ENV: development
-          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
-      - uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: "4"
-          command: pages deploy packages/frontend/dist --project-name=${{ vars.CF_PAGES_PROJECT }} --branch=main
-
-  deploy-prod:
-    name: Frontend - Ambiente Prod
-    needs: [deploy-dev, docker-hub]
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment: production   # Required reviewers: espera aprobación manual
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run build --workspace=packages/frontend
-        env:
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
-          VITE_APP_ENV: production
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
       - uses: cloudflare/wrangler-action@v3
         with:
